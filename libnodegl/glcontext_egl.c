@@ -20,11 +20,13 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
 #if defined(TARGET_LINUX)
 #include <X11/Xlib.h>
+#include <wayland-client.h>
 #endif
 
 #include "egl.h"
@@ -35,6 +37,7 @@
 #include "utils.h"
 
 #define EGL_PLATFORM_X11 0x31D5
+#define EGL_PLATFORM_WAYLAND 0x31D8
 
 struct egl_priv {
     EGLNativeDisplayType native_display;
@@ -49,6 +52,13 @@ struct egl_priv {
     EGLAPIENTRY EGLImageKHR (*CreateImageKHR)(EGLDisplay, EGLContext, EGLenum, EGLClientBuffer, const EGLint *);
     EGLAPIENTRY EGLBoolean (*DestroyImageKHR)(EGLDisplay, EGLImageKHR);
     EGLAPIENTRY void (*EGLImageTargetTexture2DOES)(GLenum, GLeglImageOES);
+
+#if defined(TARGET_LINUX)
+    struct wl_registry_listener registry_listener;
+    struct wl_compositor *compositor;
+    struct wl_shell *shell;
+    struct wl_egl_window *egl_window;
+#endif
 };
 
 EGLImageKHR ngli_eglCreateImageKHR(struct glcontext *gl, EGLConfig context, EGLenum target, EGLClientBuffer buffer, const EGLint *attrib_list)
@@ -95,6 +105,18 @@ static int egl_probe_extensions(struct glcontext *ctx)
 }
 
 #if defined(TARGET_LINUX)
+static int egl_probe_platform_functions(struct egl_priv *egl)
+{
+    egl->GetPlatformDisplay = (void *)eglGetProcAddress("eglGetPlatformDisplay");
+    if (!egl->GetPlatformDisplay)
+        egl->GetPlatformDisplay = (void *)eglGetProcAddress("eglGetPlatformDisplayEXT");
+    if (!egl->GetPlatformDisplay) {
+        LOG(ERROR, "could not retrieve eglGetPlatformDisplay()");
+        return -1;
+    }
+    return 1;
+}
+
 static int egl_probe_platform_x11_ext(struct egl_priv *egl)
 {
     const char *client_extensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
@@ -103,51 +125,105 @@ static int egl_probe_platform_x11_ext(struct egl_priv *egl)
         return -1;
     }
 
-    if (ngli_glcontext_check_extension("EGL_KHR_platform_x11", client_extensions) ||
-        ngli_glcontext_check_extension("EGL_EXT_platform_x11", client_extensions)) {
-        egl->GetPlatformDisplay = (void *)eglGetProcAddress("eglGetPlatformDisplay");
-        if (!egl->GetPlatformDisplay)
-            egl->GetPlatformDisplay = (void *)eglGetProcAddress("eglGetPlatformDisplayEXT");
-        if (!egl->GetPlatformDisplay) {
-            LOG(ERROR, "could not retrieve eglGetPlatformDisplay()");
-            return -1;
-        }
-        return 1;
-    }
+    return ngli_glcontext_check_extension("EGL_KHR_platform_x11", client_extensions) ||
+           ngli_glcontext_check_extension("EGL_EXT_platform_x11", client_extensions);
+}
 
-    return 0;
+static int egl_probe_platform_wayland_ext(struct egl_priv *egl)
+{
+    char const *client_extensions = eglQueryString(egl->display, EGL_EXTENSIONS);
+    if (!client_extensions)
+        return 0;
+
+    return ngli_glcontext_check_extension("EGL_KHR_platform_wayland", client_extensions) ||
+           ngli_glcontext_check_extension("EGL_EXT_platform_wayland", client_extensions);
+}
+
+static void registry_add_object(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
+{
+    struct egl_priv *egl = data;
+
+    if (!strcmp(interface,"wl_compositor")) {
+        egl->compositor = wl_registry_bind (registry, name, &wl_compositor_interface, 1);
+    } else if (!strcmp(interface,"wl_shell")) {
+        egl->shell = wl_registry_bind (registry, name, &wl_shell_interface, 1);
+    }
+}
+
+static void registry_remove_object (void *data, struct wl_registry *registry, uint32_t name)
+{
+    /* TODO */
 }
 #endif
 
-static int egl_set_native_display(struct egl_priv *egl, uintptr_t native_display)
+static int egl_set_native_display(struct glcontext *ctx, uintptr_t native_display)
 {
+    struct egl_priv *egl = ctx->priv_data;
+
     if (native_display) {
         egl->native_display = (EGLNativeDisplayType)native_display;
         return 0;
     }
 #if defined(TARGET_LINUX)
-    egl->native_display = XOpenDisplay(NULL);
-    if (!egl->native_display) {
-        LOG(ERROR, "could not retrieve X11 display");
-        return -1;
+    if (ctx->platform == NGL_PLATFORM_WAYLAND) {
+        struct wl_display *display = wl_display_connect(NULL);
+        if (!display) {
+            LOG(ERROR, "could not connect to wayland display");
+            return -1;
+        }
+        egl->native_display = (EGLNativeDisplayType)display;
+        egl->own_native_display = 1;
+
+        struct wl_registry *registry = wl_display_get_registry(display);
+        if (!registry) {
+            LOG(ERROR, "could not get wayland display registry");
+            return -1;
+        }
+
+        egl->registry_listener.global = registry_add_object;
+        egl->registry_listener.global_remove = registry_remove_object;
+
+        wl_registry_add_listener(registry, &egl->registry_listener, egl);
+        wl_display_roundtrip(display);
+
+    } else if (ctx->platform == NGL_PLATFORM_XLIB) {
+        egl->native_display = XOpenDisplay(NULL);
+        if (!egl->native_display) {
+            LOG(ERROR, "could not retrieve X11 display");
+            return -1;
+        }
+        egl->own_native_display = 1;
     }
-    egl->own_native_display = 1;
 #else
     egl->native_display = EGL_DEFAULT_DISPLAY;
 #endif
     return 0;
 }
 
-static EGLDisplay egl_get_display(struct egl_priv *egl, EGLNativeDisplayType native_display)
+static EGLDisplay egl_get_display(struct glcontext *ctx, EGLNativeDisplayType native_display)
 {
 #if defined(TARGET_ANDROID)
     return eglGetDisplay(native_display);
 #elif defined(TARGET_LINUX)
-    /* XXX: only X11 is supported for now */
-    int ret = egl_probe_platform_x11_ext(egl);
-    if (ret <= 0)
+    struct egl_priv *egl = ctx->priv_data;
+
+    int ret = egl_probe_platform_functions(egl);
+    if (ret < 0)
         return EGL_NO_DISPLAY;
-    return egl->GetPlatformDisplay(EGL_PLATFORM_X11, native_display, NULL);
+
+    if (ctx->platform == NGL_PLATFORM_XLIB) {
+        ret = egl_probe_platform_x11_ext(egl);
+        if (ret <= 0)
+            return EGL_NO_DISPLAY;
+        return egl->GetPlatformDisplay(EGL_PLATFORM_X11, native_display, NULL);
+    } else if (ctx->platform == NGL_PLATFORM_WAYLAND) {
+        ret = egl_probe_platform_wayland_ext(egl);
+        if (ret <= 0)
+            return EGL_NO_DISPLAY;
+        return egl->GetPlatformDisplay(EGL_PLATFORM_WAYLAND, native_display, NULL);
+    } else {
+        ngli_assert(0);
+    }
 #else
     return EGL_NO_DISPLAY;
 #endif
@@ -157,13 +233,13 @@ static int egl_init(struct glcontext *ctx, uintptr_t display, uintptr_t window, 
 {
     struct egl_priv *egl = ctx->priv_data;
 
-    int ret = egl_set_native_display(egl, display);
+    int ret = egl_set_native_display(ctx, display);
     if (ret < 0) {
         LOG(ERROR, "could not set native display");
         return -1;
     }
 
-    egl->display = egl_get_display(egl, egl->native_display);
+    egl->display = egl_get_display(ctx, egl->native_display);
     if (!egl->display) {
         LOG(ERROR, "could not retrieve EGL display");
         return -1;
@@ -291,7 +367,12 @@ static void egl_uninit(struct glcontext *ctx)
 
 #if defined(TARGET_LINUX)
     if (egl->own_native_display) {
-        XCloseDisplay(egl->native_display);
+        if (ctx->platform == NGL_PLATFORM_XLIB)
+            XCloseDisplay(egl->native_display);
+        else if (ctx->platform == NGL_PLATFORM_WAYLAND)
+            wl_display_disconnect((struct wl_display *)egl->native_display);
+        else
+            ngli_assert(0);
     }
 #endif
 }

@@ -304,6 +304,7 @@ struct ngl_node *ngl_node_deserialize(const char *s);
 enum {
     NGL_PLATFORM_AUTO,
     NGL_PLATFORM_XLIB,
+    NGL_PLATFORM_WAYLAND,
     NGL_PLATFORM_ANDROID,
     NGL_PLATFORM_MACOS,
     NGL_PLATFORM_IOS,
