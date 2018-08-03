@@ -35,6 +35,10 @@ enum {
     NGLI_PRIMITIVE_TOPOLOGY_NB
 };
 
+#ifndef VULKAN_BACKEND
 GLenum ngli_topology_get_gl_topology(int topology);
+#else
+VkPrimitiveTopology ngli_topology_get_vk_topology(int topology);
+#endif
 
 #endif

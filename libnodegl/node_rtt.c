@@ -95,6 +95,7 @@ static int rtt_init(struct ngl_node *node)
     return 0;
 }
 
+#ifndef VULKAN_BACKEND
 static int create_ms_rendertarget(struct ngl_node *node, int depth_format)
 {
     struct ngl_ctx *ctx = node->ctx;
@@ -156,7 +157,11 @@ error:
     ngli_darray_reset(&attachments);
     return -1;
 }
+#endif
 
+#ifdef VULKAN_BACKEND
+// TODO
+#else
 static int rtt_prefetch(struct ngl_node *node)
 {
     struct ngl_ctx *ctx = node->ctx;
@@ -364,15 +369,18 @@ static void rtt_release(struct ngl_node *node)
     ngli_darray_reset(&s->rt_ms_colors);
     ngli_texture_reset(&s->rt_ms_depth);
 }
+#endif
 
 const struct node_class ngli_rtt_class = {
     .id        = NGL_NODE_RENDERTOTEXTURE,
     .name      = "RenderToTexture",
     .init      = rtt_init,
+#ifndef VULKAN_BACKEND
     .prefetch  = rtt_prefetch,
     .update    = rtt_update,
     .draw      = rtt_draw,
     .release   = rtt_release,
+#endif
     .priv_size = sizeof(struct rtt_priv),
     .params    = rtt_params,
     .file      = __FILE__,

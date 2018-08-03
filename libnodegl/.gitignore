@@ -10,4 +10,5 @@
 /test_darray
 /test_draw
 /test_hmap
+/test_spirv
 /test_utils

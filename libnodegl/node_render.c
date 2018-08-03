@@ -33,6 +33,7 @@
 #include "memory.h"
 #include "nodegl.h"
 #include "nodes.h"
+#include "spirv.h"
 #include "topology.h"
 #include "utils.h"
 
@@ -98,6 +99,7 @@ static const struct node_param render_params[] = {
     {NULL}
 };
 
+#ifndef VULKAN_BACKEND
 static void draw_elements(struct glcontext *gl, const struct render_priv *render)
 {
     const struct geometry_priv *geometry = render->geometry->priv_data;
@@ -131,6 +133,37 @@ static void draw_arrays_instanced(struct glcontext *gl, const struct render_priv
     const GLenum gl_topology = ngli_topology_get_gl_topology(geometry->topology);
     ngli_glDrawArraysInstanced(gl, gl_topology, 0, vertices->count, render->nb_instances);
 }
+#else
+static void draw_elements(VkCommandBuffer cmd_buf, const struct render_priv *render)
+{
+    const struct geometry_priv *geometry = render->geometry->priv_data;
+    const struct buffer_priv *indices = geometry->indices_buffer->priv_data;
+    vkCmdBindIndexBuffer(cmd_buf, indices->buffer.vkbuf, 0, render->indices_type);
+    vkCmdDrawIndexed(cmd_buf, indices->count, 1, 0, 0, 0);
+}
+
+static void draw_elements_instanced(VkCommandBuffer cmd_buf, const struct render_priv *render)
+{
+    const struct geometry_priv *geometry = render->geometry->priv_data;
+    const struct buffer_priv *indices = geometry->indices_buffer->priv_data;
+    vkCmdBindIndexBuffer(cmd_buf, indices->buffer.vkbuf, 0, render->indices_type);
+    vkCmdDrawIndexed(cmd_buf, indices->count, render->nb_instances, 0, 0, 0);
+}
+
+static void draw_arrays(VkCommandBuffer cmd_buf, const struct render_priv *render)
+{
+    const struct geometry_priv *geometry = render->geometry->priv_data;
+    const struct buffer_priv *vertices = geometry->vertices_buffer->priv_data;
+    vkCmdDraw(cmd_buf, vertices->count, 1, 0, 0);
+}
+
+static void draw_arrays_instanced(VkCommandBuffer cmd_buf, const struct render_priv *render)
+{
+    const struct geometry_priv *geometry = render->geometry->priv_data;
+    const struct buffer_priv *vertices = geometry->vertices_buffer->priv_data;
+    vkCmdDraw(cmd_buf, vertices->count, render->nb_instances, 0, 0);
+}
+#endif
 
 static int check_attributes(struct render_priv *s, struct hmap *attributes, int per_instance)
 {
@@ -212,10 +245,14 @@ static int init_builtin_attributes(struct render_priv *s)
 static int render_init(struct ngl_node *node)
 {
     struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct render_priv *s = node->priv_data;
 
     /* Instancing checks */
+#ifdef VULKAN_BACKEND
+    /* TODO */
+#else
+    struct glcontext *gl = ctx->glcontext;
+
     if (s->nb_instances && !(gl->features & NGLI_FEATURE_DRAW_INSTANCED)) {
         LOG(ERROR, "context does not support instanced draws");
         return -1;
@@ -225,6 +262,7 @@ static int render_init(struct ngl_node *node)
         LOG(ERROR, "context does not support instanced arrays");
         return -1;
     }
+#endif
 
     int ret = check_attributes(s, s->attributes, 0);
     if (ret < 0)
@@ -256,7 +294,15 @@ static int render_init(struct ngl_node *node)
             return -1;
         }
 
+#ifdef VULKAN_BACKEND
+        const int index_node_type = geometry->indices_buffer->class->id;
+        ngli_assert(index_node_type == NGL_NODE_BUFFERUSHORT ||
+                    index_node_type == NGL_NODE_BUFFERUINT);
+        s->indices_type = index_node_type == NGL_NODE_BUFFERUINT ? VK_INDEX_TYPE_UINT32
+                                                                 : VK_INDEX_TYPE_UINT16;
+#else
         ngli_format_get_gl_texture_format(gl, indices->data_format, NULL, NULL, &s->indices_type);
+#endif
     }
 
     ret = init_builtin_attributes(s);
@@ -265,6 +311,7 @@ static int render_init(struct ngl_node *node)
 
     struct pipeline_params params = {
         .label = node->label,
+        .topology = geometry->topology,
         .program = s->program,
         .textures = s->textures,
         .uniforms = s->uniforms,
@@ -306,14 +353,79 @@ static int render_update(struct ngl_node *node, double t)
     if (ret < 0)
         return ret;
 
+#ifdef VULKAN_BACKEND
+    struct ngl_ctx *ctx = node->ctx;
+    ngli_honor_pending_glstate(ctx);
+#endif
+
     return ngli_pipeline_update(&s->pipeline, t);
 }
 
 static void render_draw(struct ngl_node *node)
 {
     struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct render_priv *s = node->priv_data;
+
+#ifdef VULKAN_BACKEND
+    struct glcontext *vk = ctx->glcontext;
+
+    VkCommandBuffer cmd_buf = s->pipeline.command_buffers[vk->img_index];
+
+    VkCommandBufferBeginInfo command_buffer_begin_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
+    };
+
+    VkResult ret = vkBeginCommandBuffer(cmd_buf, &command_buffer_begin_info);
+    if (ret != VK_SUCCESS)
+        return;
+
+    const float *rgba = vk->config.clear_color;
+    VkClearValue clear_color = {.color.float32={rgba[0], rgba[1], rgba[2], rgba[3]}};
+    VkRenderPassBeginInfo render_pass_begin_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = vk->render_pass,
+        .framebuffer = vk->framebuffers[vk->img_index],
+        .renderArea = {
+            .extent = vk->extent,
+        },
+        .clearValueCount = 1,
+        .pClearValues = &clear_color,
+    };
+
+    vkCmdBeginRenderPass(cmd_buf, &render_pass_begin_info,
+                         VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport = {
+        .width = vk->config.width,
+        .height = vk->config.height,
+        .minDepth = 0.f,
+        .maxDepth = 1.f,
+    };
+    vkCmdSetViewport(cmd_buf, 0, 1, &viewport);
+
+    VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = {vk->config.width, vk->config.height},
+    };
+    vkCmdSetScissor(cmd_buf, 0, 1, &scissor);
+
+    ngli_pipeline_bind(&s->pipeline);
+
+    s->draw(cmd_buf, s);
+
+    ngli_pipeline_unbind(&s->pipeline);
+
+    vkCmdEndRenderPass(cmd_buf);
+
+    ret = vkEndCommandBuffer(cmd_buf);
+    if (ret != VK_SUCCESS)
+        return;
+
+    vk->command_buffers[vk->nb_command_buffers++] = cmd_buf;
+
+#else
+    struct glcontext *gl = ctx->glcontext;
 
     int ret = ngli_pipeline_bind(&s->pipeline);
     if (ret < 0) {
@@ -326,6 +438,7 @@ static void render_draw(struct ngl_node *node)
     if (ret < 0) {
         LOG(ERROR, "could not unbind pipeline");
     }
+#endif
 }
 
 const struct node_class ngli_render_class = {

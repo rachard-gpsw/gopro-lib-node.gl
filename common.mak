@@ -29,6 +29,8 @@ PKG_CONFIG ?= pkg-config
 PYTHON     ?= python
 TARGET_OS  ?= $(shell uname -s)
 ARCH       ?= $(shell uname -m)
+#BACKEND    ?= gl
+BACKEND    ?= vk
 
 ifeq ($(OS),Windows_NT)
 	TARGET_OS   = MinGW-w64
@@ -57,3 +59,7 @@ PROJECT_LDLIBS := $(LDLIBS)
 ifeq ($(TARGET_OS),MinGW-w64)
 	EXESUF = .exe
 endif # MinGW
+
+ifeq ($(BACKEND),vk)
+	PROJECT_CFLAGS += -DVULKAN_BACKEND
+endif

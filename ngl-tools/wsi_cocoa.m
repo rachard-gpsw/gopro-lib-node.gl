@@ -31,6 +31,10 @@ int wsi_set_ngl_config(struct ngl_config *config, GLFWwindow *window)
     NSWindow *nswindow = glfwGetCocoaWindow(window);
     NSView *view = [nswindow contentView];
 
+    // HACK: should be in libnodegl?
+    NSBundle *bundle = [NSBundle bundleWithPath:@"/System/Library/Frameworks/QuartzCore.framework"];
+    view.layer = [[bundle classNamed:@"CAMetalLayer"] layer];
+
     config->window = (uintptr_t)view;
 
     return 0;

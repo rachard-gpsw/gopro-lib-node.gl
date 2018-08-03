@@ -267,7 +267,7 @@ Parameter | Ctor. | Live-chg. | Type | Description | Default
 
 Parameter | Ctor. | Live-chg. | Type | Description | Default
 --------- | :---: | :-------: | ---- | ----------- | :-----:
-`compute` | ✓ |  | [`string`](#parameter-types) | compute shader | 
+`compute` |  |  | [`data`](#parameter-types) | compute SPIR-V shader | 
 
 
 **Source**: [node_computeprogram.c](/libnodegl/node_computeprogram.c)
@@ -280,7 +280,7 @@ Parameter | Ctor. | Live-chg. | Type | Description | Default
 `vertices` | ✓ |  | [`Node`](#parameter-types) ([BufferVec3](#buffer), [AnimatedBufferVec3](#animatedbuffer)) | vertice coordinates defining the geometry | 
 `uvcoords` |  |  | [`Node`](#parameter-types) ([BufferFloat](#buffer), [BufferVec2](#buffer), [BufferVec3](#buffer), [AnimatedBufferFloat](#animatedbuffer), [AnimatedBufferVec2](#animatedbuffer), [AnimatedBufferVec3](#animatedbuffer)) | coordinates used for UV mapping of each `vertices` | 
 `normals` |  |  | [`Node`](#parameter-types) ([BufferVec3](#buffer), [AnimatedBufferVec3](#animatedbuffer)) | normal vectors of each `vertices` | 
-`indices` |  |  | [`Node`](#parameter-types) ([BufferUByte](#buffer), [BufferUInt](#buffer), [BufferUShort](#buffer)) | indices defining the drawing order of the `vertices`, auto-generated if not set | 
+`indices` |  |  | [`Node`](#parameter-types) ([BufferUInt](#buffer), [BufferUShort](#buffer)) | indices defining the drawing order of the `vertices`, auto-generated if not set | 
 `topology` |  |  | [`topology`](#topology-choices) | primitive topology | `triangle_list`
 
 
@@ -372,8 +372,8 @@ Parameter | Ctor. | Live-chg. | Type | Description | Default
 
 Parameter | Ctor. | Live-chg. | Type | Description | Default
 --------- | :---: | :-------: | ---- | ----------- | :-----:
-`vertex` |  |  | [`string`](#parameter-types) | vertex shader | 
-`fragment` |  |  | [`string`](#parameter-types) | fragment shader | 
+`vertex` |  |  | [`data`](#parameter-types) | vertex SPIR-V shader | 
+`fragment` |  |  | [`data`](#parameter-types) | fragment SPIR-V shader | 
 
 
 **Source**: [node_program.c](/libnodegl/node_program.c)

@@ -42,7 +42,13 @@
 
 #include "animation.h"
 #include "drawutils.h"
+
+#ifdef VULKAN_BACKEND
+#include <vulkan/vulkan.h>
+#else
 #include "glincludes.h"
+#endif
+
 #include "glcontext.h"
 #include "glstate.h"
 #include "graphicconfig.h"
@@ -341,9 +347,19 @@ struct rtt_priv {
 };
 
 struct program_priv {
+#ifdef VULKAN_BACKEND
+    // TODO: remove binary data
+    uint8_t *vert_data;
+    int vert_data_size;
+    uint8_t *frag_data;
+    int frag_data_size;
+    uint8_t *comp_data;
+    int comp_data_size;
+#else
     const char *vertex;
     const char *fragment;
     const char *compute;
+#endif
 
     struct program program;
 };
@@ -355,6 +371,21 @@ struct texture_priv {
     struct texture_params params;
     struct ngl_node *data_src;
     int direct_rendering;
+
+#ifdef VULKAN_BACKEND
+#if 0
+    VkCommandPool command_pool;
+
+    VkBuffer buffer;
+    VkDeviceMemory buffer_memory;
+    VkImage vkimage;
+    VkDeviceSize image_size;
+    int image_allocated;
+    VkDeviceMemory image_memory;
+    VkImageView image_view;
+    VkSampler image_sampler;
+#endif
+#endif
 
     struct texture texture;
     struct image image;
@@ -369,6 +400,13 @@ struct texture_priv {
 #define NGLI_SAMPLING_MODE_NV12         3
 
 struct textureprograminfo {
+#ifdef VULKAN_BACKEND
+    int binding;
+    int is_sampler;
+    int coord_matrix_offset;
+    int dimensions_offset;
+    int ts_offset;
+#else
     int sampling_mode_location;
     int sampler_value;
     int sampler_type;
@@ -380,6 +418,7 @@ struct textureprograminfo {
     int dimensions_location;
     int dimensions_type;
     int ts_location;
+#endif
 };
 
 typedef void (*nodeprograminfopair_handle_func)(struct glcontext *gl, GLint loc, void *priv);
@@ -394,6 +433,7 @@ struct nodeprograminfopair {
 
 struct pipeline_params {
     const char *label;
+    int topology;
     struct ngl_node *program;
     struct hmap *textures;
     struct hmap *uniforms;
@@ -426,12 +466,42 @@ struct pipeline {
 
     struct darray attribute_pairs; // nodeprograminfopair (attribute, attributeprograminfo)
     struct darray instance_attribute_pairs; // nodeprograminfopair (instance attribute, attributeprograminfo)
+#ifdef VULKAN_BACKEND
+    int last_width;
+    int last_height;
 
+    VkPipelineLayout pipeline_layout;
+    VkPipeline vkpipeline;
+    VkPipelineBindPoint bind_point;
+    VkCommandBuffer *command_buffers;
+    int nb_command_buffers; // XXX drop for vk->nb_framebuffers
+
+    int queue_family_id;
+    VkCommandPool command_pool;
+
+    struct darray binding_descriptors;
+    struct darray constant_descriptors;
+
+    VkDescriptorPool descriptor_pool;
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorSet *descriptor_sets;
+
+    VkVertexInputBindingDescription *bind_descs;
+    VkVertexInputAttributeDescription *attr_descs;
+    VkBuffer *vkbufs;
+    VkDeviceSize *vkbufs_offsets;
+    int nb_binds;
+
+    struct buffer uniform_buffer;
+
+    int flags;
+#else
     GLint modelview_matrix_location;
     GLint projection_matrix_location;
     GLint normal_matrix_location;
 
     GLuint vao_id;
+#endif
 };
 
 struct render_priv {
@@ -448,9 +518,16 @@ struct render_priv {
     struct pipeline pipeline;
 
     int has_indices_buffer_ref;
+
+#ifdef VULKAN_BACKEND
+    VkIndexType indices_type;
+
+    void (*draw)(VkCommandBuffer cmd_buf, const struct render_priv *render);
+#else
     GLenum indices_type;
 
     void (*draw)(struct glcontext *gl, const struct render_priv *render);
+#endif
 };
 
 struct compute_priv {
@@ -485,10 +562,13 @@ struct media_priv {
     struct sxplayer_ctx *player;
     struct sxplayer_frame *frame;
 
+#ifdef VULKAN_BACKEND
+#else
 #if defined(TARGET_ANDROID)
     struct texture android_texture;
     struct android_surface *android_surface;
     struct android_handlerthread *android_handlerthread;
+#endif
 #endif
 };
 

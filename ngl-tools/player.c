@@ -23,6 +23,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef VULKAN_BACKEND
+#define GLFW_INCLUDE_VULKAN
+#endif
 #include <GLFW/glfw3.h>
 #include <sys/types.h>
 #include <sys/stat.h>

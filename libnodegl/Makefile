@@ -62,19 +62,14 @@ LIB_PCNAME   = $(LIB_BASENAME).pc
 
 LIB_OBJS = animation.o              \
            api.o                    \
-           backend_gl.o             \
            bstr.o                   \
-           buffer.o                 \
            darray.o                 \
            deserialize.o            \
            dot.o                    \
            drawutils.o              \
            format.o                 \
-           glcontext.o              \
-           glstate.o                \
            graphicconfig.o          \
            hmap.o                   \
-           hwconv.o                 \
            hwupload.o               \
            hwupload_common.o        \
            image.o                  \
@@ -113,12 +108,8 @@ LIB_OBJS = animation.o              \
            node_userswitch.o        \
            nodes.o                  \
            params.o                 \
-           pipeline.o               \
-           program.o                \
-           rendertarget.o           \
            serialize.o              \
-           texture.o                \
-           topology.o               \
+           spirv.o                  \
            transforms.o             \
            utils.o                  \
 
@@ -126,28 +117,72 @@ LIB_OBJS_ARCH_aarch64 = asm_aarch64.o
 
 LIB_OBJS += $(LIB_OBJS_ARCH_$(ARCH))
 
+ifeq ($(BACKEND),vk)
+LIB_OBJS += backend_vk.o            \
+            buffer_vk.o             \
+            glstate_vk.o            \
+            pipeline_vk.o           \
+            program_vk.o            \
+            texture_vk.o            \
+            topology_vk.o           \
+
+else
+LIB_OBJS += backend_gl.o            \
+            buffer.o                \
+            glcontext.o             \
+            glstate.o               \
+            hwconv.o                \
+            pipeline.o              \
+            program.o               \
+            rendertarget.o          \
+            texture.o               \
+            topology.o              \
+
 LIB_EXTRA_OBJS_Linux     = glcontext_egl.o
 LIB_EXTRA_OBJS_Darwin    = glcontext_nsgl.o hwupload_videotoolbox_darwin.o
-LIB_EXTRA_OBJS_Android   = glcontext_egl.o jni_utils.o android_utils.o android_looper.o android_surface.o android_handler.o android_handlerthread.o hwupload_mediacodec.o
+LIB_EXTRA_OBJS_Android   = glcontext_egl.o hwupload_mediacodec.o
 LIB_EXTRA_OBJS_iPhone    = glcontext_eagl.o hwupload_videotoolbox_ios.o
 LIB_EXTRA_OBJS_MinGW-w64 = glcontext_wgl.o
+endif
+LIB_EXTRA_OBJS_Android += jni_utils.o android_utils.o android_looper.o android_surface.o android_handler.o android_handlerthread.o
+
+# XXX/HACK
+VKSDK_VER = 1.1.77.0
+VKSDK_FILE = vulkansdk-macos-$(VKSDK_VER)
+VKSDK_TGZ = $(VKSDK_FILE).tar.gz
+VKSDK_BASEURL = https://sdk.lunarg.com/sdk/download/$(VKSDK_VER)/mac/
+MVK_ROOT = vulkansdk-macos-$(VKSDK_VER)/MoltenVK/
 
 LIB_CFLAGS                 = -fPIC
+ifneq ($(BACKEND),vk)
 LIB_EXTRA_CFLAGS_Linux     = -DHAVE_GLPLATFORM_EGL
 LIB_EXTRA_CFLAGS_Darwin    = -DHAVE_GLPLATFORM_NSGL
 LIB_EXTRA_CFLAGS_Android   = -DHAVE_GLPLATFORM_EGL
 LIB_EXTRA_CFLAGS_iPhone    = -DHAVE_GLPLATFORM_EAGL
 LIB_EXTRA_CFLAGS_MinGW-w64 = -DHAVE_GLPLATFORM_WGL
+else
+LIB_EXTRA_CFLAGS_Darwin    = -I$(MVK_ROOT)/include/
+LIB_EXTRA_CFLAGS_iPhone    = -I$(MVK_ROOT)/include/
+endif
 
 LIB_LDLIBS                 = -lm -lpthread
 LIB_EXTRA_LDLIBS_Linux     =
+ifneq ($(BACKEND),vk)
 LIB_EXTRA_LDLIBS_Darwin    = -framework OpenGL -framework CoreVideo -framework CoreFoundation -framework AppKit -framework IOSurface
-LIB_EXTRA_LDLIBS_Android   = -legl
 LIB_EXTRA_LDLIBS_iPhone    = -framework CoreMedia
+else
+LIB_EXTRA_LDLIBS_Darwin    = -L$(MVK_ROOT)/macOS -Wl,-rpath,$(MVK_ROOT)/macOS -lMoltenVK
+LIB_EXTRA_LDLIBS_iPhone    = -L$(MVK_ROOT)/iOS -Wl,-rpath,$(MVK_ROOT)/iOS -lMoltenVK
+endif
+LIB_EXTRA_LDLIBS_Android   = -legl
 LIB_EXTRA_LDLIBS_MinGW-w64 = -lopengl32 -lgdi32
 
 LIB_PKG_CONFIG_LIBS               = "libsxplayer >= 9.3.1"
+ifeq ($(BACKEND),vk)
+LIB_EXTRA_PKG_CONFIG_LIBS_Linux   = x11 vulkan
+else
 LIB_EXTRA_PKG_CONFIG_LIBS_Linux   = x11 gl egl
+endif
 LIB_EXTRA_PKG_CONFIG_LIBS_Darwin  =
 LIB_EXTRA_PKG_CONFIG_LIBS_Android = libavcodec
 LIB_EXTRA_PKG_CONFIG_LIBS_iPhone  =
@@ -160,10 +195,12 @@ else
 	ENABLE_VAAPI_X11 = no
 endif
 
+ifneq ($(BACKEND),vk)
 ifeq ($(ENABLE_VAAPI_X11),yes)
 	PROJECT_CFLAGS += -DHAVE_VAAPI_X11
 	LIB_EXTRA_OBJS_Linux += hwupload_vaapi.o vaapi.o
 	LIB_PKG_CONFIG_LIBS += $(VAAPI_PKG_CONFIG_LIBS)
+endif
 endif
 
 LIB_OBJS   += $(LIB_EXTRA_OBJS_$(TARGET_OS))
@@ -259,12 +296,22 @@ gl.xml:
 
 
 #
+# Vulkan default shader SPIR-V generation
+#
+vk_default_vert.h: vk/default.vert
+	glslangValidator -V --vn vk_default_vert -o $@ $<
+vk_default_frag.h: vk/default.frag
+	glslangValidator -V --vn vk_default_frag -o $@ $<
+node_program.o: vk_default_vert.h vk_default_frag.h
+
+#
 # Tests
 #
 TESTS = asm             \
         darray          \
         draw            \
         hmap            \
+        spirv           \
         utils           \
 
 TESTPROGS = $(addprefix test_,$(TESTS))
@@ -278,6 +325,7 @@ test_asm: test_asm.o math_utils.o $(LIB_OBJS_ARCH_$(ARCH))
 test_darray: test_darray.o darray.o memory.o
 test_draw: test_draw.o drawutils.o
 test_hmap: test_hmap.o utils.o memory.o
+test_spirv: test_spirv.o spirv.o hmap.o utils.o darray.o memory.o
 test_utils: test_utils.o utils.o memory.o
 
 
@@ -322,6 +370,12 @@ uninstall:
 	$(RM) $(DESTDIR)$(PREFIX)/include/nodegl.h
 	$(RM) -r $(DESTDIR)$(PREFIX)/share/nodegl
 
-.PHONY: all updatespecs clean install uninstall gen-gl-wrappers
+# XXX/HACK
+vksdk: $(VKSDK_TGZ)
+	tar xf $<
+$(VKSDK_TGZ):
+	wget $(VKSDK_BASEURL)/$@
+
+.PHONY: all updatespecs clean install uninstall gen-gl-wrappers vksdk update_vk_spirv
 
 -include $(LIB_DEPS)

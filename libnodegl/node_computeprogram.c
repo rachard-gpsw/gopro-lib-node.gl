@@ -27,26 +27,37 @@
 #include "nodegl.h"
 #include "nodes.h"
 #include "program.h"
+#include "spirv.h"
 
 #define OFFSET(x) offsetof(struct program_priv, x)
 static const struct node_param computeprogram_params[] = {
+#ifdef VULKAN_BACKEND
+    // FIXME: should be the same param type on all backends
+    {"compute", PARAM_TYPE_DATA, OFFSET(comp_data),
+                .desc=NGLI_DOCSTRING("compute SPIR-V shader")},
+#else
     {"compute", PARAM_TYPE_STR, OFFSET(compute), .flags=PARAM_FLAG_CONSTRUCTOR,
                 .desc=NGLI_DOCSTRING("compute shader")},
+#endif
     {NULL}
 };
 
 static int computeprogram_init(struct ngl_node *node)
 {
     struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct program_priv *s = node->priv_data;
 
+#ifdef VULKAN_BACKEND
+    return ngli_program_init(&s->program, ctx, NULL, 0, NULL, 0, s->comp_data, s->comp_data_size);
+#else
+    struct glcontext *gl = ctx->glcontext;
     if (!(gl->features & NGLI_FEATURE_COMPUTE_SHADER_ALL)) {
         LOG(ERROR, "context does not support compute shaders");
         return -1;
     }
 
     return ngli_program_init(&s->program, ctx, NULL, NULL, s->compute);
+#endif
 }
 
 static void computeprogram_uninit(struct ngl_node *node)

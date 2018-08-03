@@ -98,7 +98,7 @@ class Hooks(QtCore.QThread):
             # The graphic backend can be different when using hooks: the scene might
             # be rendered on a remote device different from the one constructing
             # the scene graph
-            backend = self._get_hook_output('get_gl_backend')
+            backend = self._get_hook_output('get_backend')
             system = self._get_hook_output('get_system')
             self.buildingSceneNotif.emit(backend, system)
             cfg = self._get_scene_func(backend=backend, system=system)

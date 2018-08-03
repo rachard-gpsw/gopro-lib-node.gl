@@ -39,6 +39,7 @@ struct rendertarget {
     int height;
     int nb_color_attachments;
 
+#ifndef VULKAN_BACKEND
     GLuint id;
     GLuint prev_id;
     struct darray depth_indices;
@@ -46,6 +47,7 @@ struct rendertarget {
     int nb_draw_buffers;
     GLenum *blit_draw_buffers;
     void (*blit)(struct rendertarget *s, struct rendertarget *dst, int vflip);
+#endif
 };
 
 int ngli_rendertarget_init(struct rendertarget *s, struct ngl_ctx *ctx, const struct rendertarget_params *params);

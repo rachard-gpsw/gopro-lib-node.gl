@@ -24,9 +24,16 @@
 #include <string.h>
 #include "bstr.h"
 #include "log.h"
+#include "memory.h"
 #include "nodegl.h"
 #include "nodes.h"
 #include "program.h"
+#include "spirv.h"
+
+#ifdef VULKAN_BACKEND
+#include "vk_default_frag.h"
+#include "vk_default_vert.h"
+#else
 
 #if defined(TARGET_ANDROID)
 static const char default_fragment_shader[] =
@@ -86,12 +93,22 @@ static const char default_vertex_shader[] =
     "    var_tex0_coord = (tex0_coord_matrix * vec4(ngl_uvcoord, 0.0, 1.0)).xy;"        "\n"
     "}";
 
+#endif
+
 #define OFFSET(x) offsetof(struct program_priv, x)
 static const struct node_param program_params[] = {
+#ifdef VULKAN_BACKEND
+    // FIXME: should be the same param type on all backends
+    {"vertex",   PARAM_TYPE_DATA, OFFSET(vert_data),
+                 .desc=NGLI_DOCSTRING("vertex SPIR-V shader")},
+    {"fragment", PARAM_TYPE_DATA, OFFSET(frag_data),
+                 .desc=NGLI_DOCSTRING("fragment SPIR-V shader")},
+#else
     {"vertex",   PARAM_TYPE_STR, OFFSET(vertex),   {.str=default_vertex_shader},
                  .desc=NGLI_DOCSTRING("vertex shader")},
     {"fragment", PARAM_TYPE_STR, OFFSET(fragment), {.str=default_fragment_shader},
                  .desc=NGLI_DOCSTRING("fragment shader")},
+#endif
     {NULL}
 };
 
@@ -100,7 +117,32 @@ static int program_init(struct ngl_node *node)
     struct ngl_ctx *ctx = node->ctx;
     struct program_priv *s = node->priv_data;
 
+#ifdef VULKAN_BACKEND
+    // TODO: ngli_memdup()
+    if (!s->vert_data) {
+        s->vert_data_size = sizeof(vk_default_vert);
+        s->vert_data = ngli_malloc(s->vert_data_size);
+        if (!s->vert_data)
+            return -1;
+        memcpy(s->vert_data, vk_default_vert, s->vert_data_size);
+    }
+
+    // TODO: ngli_memdup()
+    if (!s->frag_data) {
+        s->frag_data_size = sizeof(vk_default_frag);
+        s->frag_data = ngli_malloc(s->frag_data_size);
+        if (!s->frag_data)
+            return -1;
+        memcpy(s->frag_data, vk_default_frag, s->frag_data_size);
+    }
+
+    return ngli_program_init(&s->program, ctx,
+                             s->vert_data, s->vert_data_size,
+                             s->frag_data, s->frag_data_size,
+                             NULL, 0);
+#else
     return ngli_program_init(&s->program, ctx, s->vertex, s->fragment, NULL);
+#endif
 }
 
 static void program_uninit(struct ngl_node *node)
