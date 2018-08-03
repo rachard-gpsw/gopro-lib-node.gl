@@ -50,6 +50,16 @@ fail:
 static const struct param_choices topology_choices = {
     .name = "topology",
     .consts = {
+#ifdef VULKAN_BACKEND
+        {"points",         VK_PRIMITIVE_TOPOLOGY_POINT_LIST,         .desc=NGLI_DOCSTRING("points")},
+        {"line_strip",     VK_PRIMITIVE_TOPOLOGY_LINE_STRIP,         .desc=NGLI_DOCSTRING("line strip")},
+        //{"line_loop",      XXX,      .desc=NGLI_DOCSTRING("line loop")},
+        //XXX: VkPipelineInputAssemblyStateCreateInfo.primitiveRestartEnable?
+        {"lines",          VK_PRIMITIVE_TOPOLOGY_LINE_LIST,          .desc=NGLI_DOCSTRING("lines")},
+        {"triangle_strip", VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,     .desc=NGLI_DOCSTRING("triangle strip")},
+        {"triangle_fan",   VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN,       .desc=NGLI_DOCSTRING("triangle fan")},
+        {"triangles",      VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,      .desc=NGLI_DOCSTRING("triangles")},
+#else
         {"points",         GL_POINTS,         .desc=NGLI_DOCSTRING("points")},
         {"line_strip",     GL_LINE_STRIP,     .desc=NGLI_DOCSTRING("line strip")},
         {"line_loop",      GL_LINE_LOOP,      .desc=NGLI_DOCSTRING("line loop")},
@@ -57,6 +67,7 @@ static const struct param_choices topology_choices = {
         {"triangle_strip", GL_TRIANGLE_STRIP, .desc=NGLI_DOCSTRING("triangle strip")},
         {"triangle_fan",   GL_TRIANGLE_FAN,   .desc=NGLI_DOCSTRING("triangle fan")},
         {"triangles",      GL_TRIANGLES,      .desc=NGLI_DOCSTRING("triangles")},
+#endif
         {NULL}
     }
 };
@@ -84,12 +95,18 @@ static const struct node_param geometry_params[] = {
                   .flags=PARAM_FLAG_DOT_DISPLAY_FIELDNAME,
                   .desc=NGLI_DOCSTRING("normal vectors of each `vertices`")},
     {"indices",   PARAM_TYPE_NODE, OFFSET(indices_buffer),
-                  .node_types=(const int[]){NGL_NODE_BUFFERUBYTE, NGL_NODE_BUFFERUINT, NGL_NODE_BUFFERUSHORT, -1},
+                  .node_types=(const int[]){NGL_NODE_BUFFERUINT, NGL_NODE_BUFFERUSHORT, -1},
                   .flags=PARAM_FLAG_DOT_DISPLAY_FIELDNAME,
                   .desc=NGLI_DOCSTRING("indices defining the drawing order of the `vertices`, auto-generated if not set")},
+#ifdef VULKAN_BACKEND
+    {"topology",  PARAM_TYPE_SELECT, OFFSET(topology), {.i64=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST},
+                  .choices=&topology_choices,
+                  .desc=NGLI_DOCSTRING("primitive topology")},
+#else
     {"topology",  PARAM_TYPE_SELECT, OFFSET(topology), {.i64=GL_TRIANGLES},
                   .choices=&topology_choices,
                   .desc=NGLI_DOCSTRING("primitive topology")},
+#endif
     {NULL}
 };
 

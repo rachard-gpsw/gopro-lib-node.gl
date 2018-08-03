@@ -62,6 +62,7 @@ static const struct param_choices wrap_choices = {
     }
 };
 
+#ifndef VULKAN_BACKEND
 static const struct param_choices access_choices = {
     .name = "access",
     .consts = {
@@ -71,6 +72,7 @@ static const struct param_choices access_choices = {
         {NULL}
     }
 };
+#endif
 
 #define DECLARE_FORMAT_PARAM(format, size, name, doc) \
     {name, format, .desc=NGLI_DOCSTRING(doc)},
@@ -146,8 +148,10 @@ static const struct node_param texture2d_params[] = {
                .desc=NGLI_DOCSTRING("wrap parameter for the texture on the s dimension (horizontal)")},
     {"wrap_t", PARAM_TYPE_SELECT, OFFSET(params.wrap_t), {.i64=NGLI_WRAP_CLAMP_TO_EDGE}, .choices=&wrap_choices,
                .desc=NGLI_DOCSTRING("wrap parameter for the texture on the t dimension (vertical)")},
+#ifndef VULKAN_BACKEND
     {"access", PARAM_TYPE_SELECT, OFFSET(params.access), {.i64=GL_READ_WRITE}, .choices=&access_choices,
                .desc=NGLI_DOCSTRING("texture access (only honored by the `Compute` node)")},
+#endif
     {"data_src", PARAM_TYPE_NODE, OFFSET(data_src), .node_types=DATA_SRC_TYPES_LIST_2D,
                  .desc=NGLI_DOCSTRING("data source")},
     {"direct_rendering", PARAM_TYPE_BOOL, OFFSET(direct_rendering), {.i64=-1},
@@ -177,8 +181,10 @@ static const struct node_param texture3d_params[] = {
                .desc=NGLI_DOCSTRING("wrap parameter for the texture on the t dimension (vertical)")},
     {"wrap_r", PARAM_TYPE_SELECT, OFFSET(params.wrap_r), {.i64=NGLI_WRAP_CLAMP_TO_EDGE}, .choices=&wrap_choices,
                .desc=NGLI_DOCSTRING("wrap parameter for the texture on the r dimension (depth)")},
+#ifndef VULKAN_BACKEND
     {"access", PARAM_TYPE_SELECT, OFFSET(params.access), {.i64=GL_READ_WRITE}, .choices=&access_choices,
                .desc=NGLI_DOCSTRING("texture access (only honored by the `Compute` node)")},
+#endif
     {"data_src", PARAM_TYPE_NODE, OFFSET(data_src), .node_types=DATA_SRC_TYPES_LIST_3D,
                  .desc=NGLI_DOCSTRING("data source")},
     {NULL}
@@ -202,8 +208,10 @@ static const struct node_param texturecube_params[] = {
                .desc=NGLI_DOCSTRING("wrap parameter for the texture on the t dimension (vertical)")},
     {"wrap_r", PARAM_TYPE_SELECT, OFFSET(params.wrap_r), {.i64=NGLI_WRAP_CLAMP_TO_EDGE}, .choices=&wrap_choices,
                .desc=NGLI_DOCSTRING("wrap parameter for the texture on the r dimension (depth)")},
+#ifndef VULKAN_BACKEND
     {"access", PARAM_TYPE_SELECT, OFFSET(params.access), {.i64=GL_READ_WRITE}, .choices=&access_choices,
                .desc=NGLI_DOCSTRING("texture access (only honored by the `Compute` node)")},
+#endif
     {"data_src", PARAM_TYPE_NODE, OFFSET(data_src), .node_types=DATA_SRC_TYPES_LIST_3D,
                  .desc=NGLI_DOCSTRING("data source")},
     {NULL}
@@ -223,8 +231,12 @@ static int texture_prefetch(struct ngl_node *node, int dimensions, int cubemap)
         params->cubemap = 1;
     }
 
+#ifdef VULKAN_BACKEND
+    params->immutable = 1;
+#else
     if (gl->features & NGLI_FEATURE_TEXTURE_STORAGE)
         params->immutable = 1;
+#endif
 
     const uint8_t *data = NULL;
 
@@ -396,6 +408,7 @@ static void texture_release(struct ngl_node *node)
 
 static int texture3d_init(struct ngl_node *node)
 {
+#ifndef VULKAN_BACKEND
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
 
@@ -403,11 +416,13 @@ static int texture3d_init(struct ngl_node *node)
         LOG(ERROR, "context does not support 3D textures");
         return -1;
     }
+#endif
     return 0;
 }
 
 static int texturecube_init(struct ngl_node *node)
 {
+#ifndef VULKAN_BACKEND
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
 
@@ -415,6 +430,7 @@ static int texturecube_init(struct ngl_node *node)
         LOG(ERROR, "context does not support cube map textures");
         return -1;
     }
+#endif
     return 0;
 }
 

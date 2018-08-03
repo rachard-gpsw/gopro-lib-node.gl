@@ -28,11 +28,18 @@ struct buffer {
     struct glcontext *gl;
     int size;
     int usage;
+#ifdef VULKAN_BACKEND
+    VkBuffer vkbuf;
+    VkDeviceMemory vkmem;
+#else
     GLuint id;
+#endif
 };
 
 int ngli_buffer_allocate(struct buffer *buffer, struct glcontext *gl, int size, int usage);
 int ngli_buffer_upload(struct buffer *buffer, void *data, int size);
+void *ngli_buffer_map(struct buffer *buffer);
+void ngli_buffer_unmap(struct buffer *buffer);
 void ngli_buffer_free(struct buffer *buffer);
 
 #endif

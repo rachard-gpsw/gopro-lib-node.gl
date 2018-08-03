@@ -204,8 +204,8 @@
         - [blocks, NodeDict]
 
 - ComputeProgram:
-    constructors:
-        - [compute, string]
+    optional:
+        - [compute, data]
 
 - Geometry:
     constructors:
@@ -275,8 +275,8 @@
 
 - Program:
     optional:
-        - [vertex, string]
-        - [fragment, string]
+        - [vertex, data]
+        - [fragment, data]
 
 - Quad:
     optional:
@@ -355,7 +355,6 @@
         - [mipmap_filter, select]
         - [wrap_s, select]
         - [wrap_t, select]
-        - [access, select]
         - [data_src, Node]
         - [direct_rendering, bool]
 
@@ -371,7 +370,6 @@
         - [wrap_s, select]
         - [wrap_t, select]
         - [wrap_r, select]
-        - [access, select]
         - [data_src, Node]
 
 - TextureCube:
@@ -384,7 +382,6 @@
         - [wrap_s, select]
         - [wrap_t, select]
         - [wrap_r, select]
-        - [access, select]
         - [data_src, Node]
 
 - TimeRangeFilter:

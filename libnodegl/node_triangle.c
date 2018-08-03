@@ -85,7 +85,11 @@ static int triangle_init(struct ngl_node *node)
     if (!s->normals_buffer)
         return -1;
 
+#ifdef VULKAN_BACKEND
+    s->topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+#else
     s->topology = GL_TRIANGLES;
+#endif
 
     return 0;
 }

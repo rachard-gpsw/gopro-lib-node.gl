@@ -39,6 +39,7 @@ struct fbo {
     int height;
     int nb_color_attachments;
 
+#ifndef VULKAN_BACKEND
     GLuint id;
     GLuint prev_id;
     struct darray depth_indices;
@@ -46,6 +47,7 @@ struct fbo {
     int nb_draw_buffers;
     GLenum *blit_draw_buffers;
     void (*blit)(struct fbo *fbo, struct fbo *dst, int vflip);
+#endif
 };
 
 int ngli_fbo_init(struct fbo *fbo, struct glcontext *gl, const struct fbo_params *params);

@@ -1,0 +1,57 @@
+Vulkan:
+* Buffer/Texture: static/dynamic depending on buffer strategy (vk->nb_frames)
+* Texture: need of a local command pool ?
+* Texture: abstract vk memory buffer creation for use in texture and buffer (non-mandatory now) (use struct buffer in texture)
+* Texture: refine usage flags, per usage (from compute/render) ? For now stick general use is enough ?
+* Abstract Texture view/Sampler from texture ? (is it really needed now ?)
+* Texture: is the staging buffer style upload the best solution ?
+* Pipeline/renderpass: create a proper abstraction and makes node_render/node_compute responsible for gathering the abstracted data to setup it
+* Hud: create timing/benchmark abstraction
+* Hud: move to core (ie: api.c/backend_*.c)
+* Move all abstraction to backend
+* Make backend compilation non-exclusive
+* Automatic anonym blocks (for supporting one-shot uniforms)
+* Build: MoltenVK integration
+* Backend: MoltenVK support
+* Hwupload: MoltenVK implementation (without cpu-copy)
+* Backend: use separate queue family for compute and graphics ?
+* Backend: better clear color only implementation (without scene)
+* Texture/Pipeline: support %s_sampling_mode ?
+* Backend: support multi-sampling
+* Backend: support frame capture
+* Support RTT (WIP)
+* Dynamic viewport/scissor pipeline (WIP in RTT)
+* Explore Subcommand / Subpasses
+* Improve spirv parsing (WIP)
+* Destroy ressources when they are not used anymore (backend->wait_idle() ?)
+
+Abstraction (struct):
+* Graphic state
+* Geometry:
+  * Line loop topology support (remove support from GL backend ?)
+  * Remove ubyte ?
+* Texture
+  * ABSTRACT all constants (include special case for mipmaps)
+* Buffer
+* FBO
+* TODO: benchmark/timing
+* TODO: renderpass
+* TODO: pipeline
+* TODO: program
+
+Abstraction:
+* Texture coordinates
+* Geometry coordinates
+
+Misc:
+* Make all shaders compatibles between backends in ngl-viewer
+
+Shaders:
+* Explore shader transpilation (GLSL 4.5 to lower GLSL versions) and layout description
+
+API:
+* Expose backend probing to user
+* Refactor block
+
+GL:
+* remove texture.access field if possible or abstract it

@@ -103,6 +103,12 @@ static GLenum get_gl_cull_mode(int cull_mode)
 
 void ngli_glstate_probe(const struct glcontext *gl, struct glstate *state)
 {
+#ifdef VULKAN_BACKEND
+    state->color_write_mask = VK_COLOR_COMPONENT_R_BIT
+                            | VK_COLOR_COMPONENT_G_BIT
+                            | VK_COLOR_COMPONENT_B_BIT
+                            | VK_COLOR_COMPONENT_A_BIT;
+#else
     /* Blend */
     ngli_glGetIntegerv(gl, GL_BLEND,                   (GLint *)&state->blend);
     ngli_glGetIntegerv(gl, GL_BLEND_SRC_RGB,           (GLint *)&state->blend_src_factor);
@@ -137,6 +143,7 @@ void ngli_glstate_probe(const struct glcontext *gl, struct glstate *state)
     /* Scissor */
     ngli_glGetBooleanv(gl, GL_SCISSOR_TEST,            &state->scissor_test);
     ngli_glGetIntegerv(gl, GL_SCISSOR_BOX,             (GLint *)&state->scissor);
+#endif
 
 }
 

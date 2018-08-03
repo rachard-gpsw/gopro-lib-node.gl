@@ -102,7 +102,11 @@ static int circle_init(struct ngl_node *node)
     if (!s->vertices_buffer || !s->uvcoords_buffer || !s->normals_buffer)
         goto end;
 
+#ifdef VULKAN_BACKEND
+    s->topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+#else
     s->topology = GL_TRIANGLE_FAN;
+#endif
 
     ret = 0;
 

@@ -262,7 +262,12 @@ static int buffer_init(struct ngl_node *node)
         ngli_assert(0);
     }
 
+#ifdef VULKAN_BACKEND
+    s->usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+#else
     s->usage = GL_STATIC_DRAW;
+#endif
+
     s->data_comp = nb_comp;
     s->data_format = format;
 

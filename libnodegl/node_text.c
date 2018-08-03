@@ -124,6 +124,7 @@ static const struct node_param text_params[] = {
     {NULL}
 };
 
+#ifndef VULKAN_BACKEND
 static void set_canvas_dimensions(struct canvas *canvas, const char *s)
 {
     canvas->w = 0;
@@ -227,9 +228,11 @@ static void enable_vertex_attribs(struct ngl_node *node)
 #define C(index) s->box_corner[index]
 #define W(index) s->box_width[index]
 #define H(index) s->box_height[index]
+#endif
 
 static int text_init(struct ngl_node *node)
 {
+#ifndef VULKAN_BACKEND
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
     struct text_priv *s = node->priv_data;
@@ -295,10 +298,14 @@ static int text_init(struct ngl_node *node)
         return ret;
 
     return ngli_texture_upload(&s->texture, s->canvas.buf, 0);
+#else
+    return 0;
+#endif
 }
 
 static void text_draw(struct ngl_node *node)
 {
+#ifndef VULKAN_BACKEND
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
     struct text_priv *s = node->priv_data;
@@ -324,10 +331,12 @@ static void text_draw(struct ngl_node *node)
         ngli_glDisableVertexAttribArray(gl, s->position_location);
         ngli_glDisableVertexAttribArray(gl, s->uvcoord_location);
     }
+#endif
 }
 
 static void text_uninit(struct ngl_node *node)
 {
+#ifndef VULKAN_BACKEND
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
     struct text_priv *s = node->priv_data;
@@ -339,6 +348,7 @@ static void text_uninit(struct ngl_node *node)
     ngli_glDeleteBuffers(gl, 1, &s->uvcoord_id);
     ngli_texture_reset(&s->texture);
     ngli_free(s->canvas.buf);
+#endif
 }
 
 const struct node_class ngli_text_class = {
