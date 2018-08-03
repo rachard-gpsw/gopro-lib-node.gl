@@ -26,6 +26,36 @@
 #include "glincludes.h"
 
 struct glstate {
+#ifdef VULKAN_BACKEND
+    VkBool32      blend;
+    VkBlendFactor blend_dst_factor;
+    VkBlendFactor blend_src_factor;
+    VkBlendFactor blend_dst_factor_a;
+    VkBlendFactor blend_src_factor_a;
+    VkBlendOp     blend_op;
+    VkBlendOp     blend_op_a;
+
+    VkColorComponentFlags color_write_mask;
+
+    VkBool32    depth_test;
+    VkBool32    depth_write_mask; // XXX: "mask"
+    VkCompareOp depth_func;
+
+    VkBool32    stencil_test;
+    uint32_t    stencil_write_mask;
+    VkStencilOp stencil_func;
+    uint32_t    stencil_ref;
+    uint32_t    stencil_read_mask;
+    VkStencilOp stencil_fail;
+    VkStencilOp stencil_depth_fail;
+    VkStencilOp stencil_depth_pass;
+
+    // cull_face field?
+    VkCullModeFlags cull_face_mode;
+
+    // scissor_test field?
+    VkRect2D scissor;
+#else
     GLenum blend;
     GLenum blend_dst_factor;
     GLenum blend_src_factor;
@@ -54,6 +84,7 @@ struct glstate {
 
     GLboolean scissor_test;
     GLint     scissor[4];
+#endif
 };
 
 void ngli_glstate_probe(const struct glcontext *gl,

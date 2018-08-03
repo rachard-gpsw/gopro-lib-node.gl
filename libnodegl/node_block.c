@@ -262,9 +262,11 @@ static void update_block_data(struct block_priv *s, int forced)
 
 static int block_init(struct ngl_node *node)
 {
+    struct block_priv *s = node->priv_data;
+
+#ifndef VULKAN_BACKEND
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
-    struct block_priv *s = node->priv_data;
 
     if (s->layout == LAYOUT_STD140 && !(gl->features & FEATURES_STD140)) {
         LOG(ERROR, "std140 blocks are not supported by this context");
@@ -275,12 +277,17 @@ static int block_init(struct ngl_node *node)
         LOG(ERROR, "std430 blocks are not supported by this context");
         return -1;
     }
+#endif
 
     s->field_info = ngli_calloc(s->nb_fields, sizeof(*s->field_info));
     if (!s->field_info)
         return -1;
 
+#ifdef VULKAN_BACKEND
+    s->usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+#else
     s->usage = GL_STATIC_DRAW;
+#endif
 
     s->data_size = 0;
     for (int i = 0; i < s->nb_fields; i++) {
@@ -294,8 +301,10 @@ static int block_init(struct ngl_node *node)
         const int remain = s->data_size % align;
         const int offset = s->data_size + (remain ? align - remain : 0);
 
+#ifndef VULKAN_BACKEND
         if (field_funcs[is_array ? IS_ARRAY : IS_SINGLE].has_changed(field_node))
             s->usage = GL_DYNAMIC_DRAW;
+#endif
 
         struct block_field_info *fi = &s->field_info[i];
         fi->is_array = is_array;

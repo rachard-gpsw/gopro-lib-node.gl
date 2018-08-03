@@ -1,0 +1,20 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0, rgba8) readonly mediump uniform image2D src_sampler;
+layout(binding = 1, rgba8) writeonly mediump uniform image2D dst_sampler;
+
+void main(void)
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    ivec2 size = imageSize(src_sampler);
+    if (x < uint(size.x) && y < uint(size.y)) {
+        vec4 color = imageLoad(src_sampler, ivec2(x, y));
+        float luma = 0.2126 * color.r + 0.7152 * color.g; + 0.0722 * color.b;
+        imageStore(dst_sampler, ivec2(x, y), vec4(luma, luma, luma, 1.0));
+    }
+}

@@ -44,6 +44,16 @@ int ngli_buffer_upload(struct buffer *buffer, void *data, int size)
     return 0;
 }
 
+void *ngli_buffer_map(struct buffer *buffer)
+{
+    /* TODO */
+    return NULL;
+}
+
+void ngli_buffer_unmap(struct buffer *buffer)
+{
+}
+
 void ngli_buffer_free(struct buffer *buffer)
 {
     if (!buffer->gl)

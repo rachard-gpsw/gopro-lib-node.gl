@@ -69,8 +69,12 @@ static const struct node_param compute_params[] = {
 static int compute_init(struct ngl_node *node)
 {
     struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct compute_priv *s = node->priv_data;
+
+#ifdef VULKAN_BACKEND
+    /* TODO */
+#else
+    struct glcontext *gl = ctx->glcontext;
 
     if (!(gl->features & NGLI_FEATURE_COMPUTE_SHADER_ALL)) {
         LOG(ERROR, "context does not support compute shaders");
@@ -90,6 +94,7 @@ static int compute_init(struct ngl_node *node)
             gl->max_compute_work_group_counts[2]);
         return -1;
     }
+#endif
 
     struct pipeline_params params = {
         .label = node->label,
@@ -115,6 +120,41 @@ static int compute_update(struct ngl_node *node, double t)
 
 static void compute_draw(struct ngl_node *node)
 {
+#ifdef VULKAN_BACKEND
+    struct ngl_ctx *ctx = node->ctx;
+    struct glcontext *vk = ctx->glcontext;
+    struct compute_priv *s = node->priv_data;
+    struct pipeline *pipeline = &s->pipeline;
+
+    VkCommandBuffer cmd_buf = pipeline->command_buffers[vk->img_index];
+
+    VkCommandBufferBeginInfo command_buffer_begin_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
+    };
+
+    VkResult vkret = vkBeginCommandBuffer(cmd_buf, &command_buffer_begin_info);
+    if (vkret != VK_SUCCESS)
+        return;
+
+    int ret = ngli_pipeline_bind(&s->pipeline);
+    if (ret < 0) {
+        LOG(ERROR, "could not bind pipeline");
+    }
+
+    vkCmdDispatch(cmd_buf, s->nb_group_x, s->nb_group_y, s->nb_group_z);
+
+    ret = ngli_pipeline_unbind(&s->pipeline);
+    if (ret < 0) {
+        LOG(ERROR, "could not unbind pipeline");
+    }
+
+    vkret = vkEndCommandBuffer(cmd_buf);
+    if (vkret != VK_SUCCESS)
+        return;
+
+    vk->command_buffers[vk->nb_command_buffers++] = cmd_buf;
+#else
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
     struct compute_priv *s = node->priv_data;
@@ -132,6 +172,7 @@ static void compute_draw(struct ngl_node *node)
     if (ret < 0) {
         LOG(ERROR, "could not unbind pipeline");
     }
+#endif
 }
 
 const struct node_class ngli_compute_class = {

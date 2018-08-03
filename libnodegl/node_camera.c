@@ -83,8 +83,6 @@ static const struct node_param camera_params[] = {
 
 static int camera_init(struct ngl_node *node)
 {
-    struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct camera_priv *s = node->priv_data;
 
     ngli_vec3_norm(s->up, s->up);
@@ -115,6 +113,12 @@ static int camera_init(struct ngl_node *node)
         s->pipe_buf = ngli_calloc(4 /* RGBA */, s->pipe_width * s->pipe_height);
         if (!s->pipe_buf)
             return -1;
+
+#ifdef VULKAN_BACKEND
+        // TODO
+#else
+        struct ngl_ctx *ctx = node->ctx;
+        struct glcontext *gl = ctx->glcontext;
 
         int sample_buffers;
         ngli_glGetIntegerv(gl, GL_SAMPLE_BUFFERS, &sample_buffers);
@@ -150,6 +154,7 @@ static int camera_init(struct ngl_node *node)
             if (ret < 0)
                 return ret;
         }
+#endif
     }
 
     return 0;
@@ -227,7 +232,6 @@ static int camera_update(struct ngl_node *node, double t)
 static void camera_draw(struct ngl_node *node)
 {
     struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct camera_priv *s = node->priv_data;
 
     if (!ngli_darray_push(&ctx->modelview_matrix_stack, s->modelview_matrix) ||
@@ -240,6 +244,12 @@ static void camera_draw(struct ngl_node *node)
     ngli_darray_pop(&ctx->projection_matrix_stack);
 
     if (s->pipe_fd) {
+#ifdef VULKAN_BACKEND
+        // TODO
+        // vkCmdCopyImageToBuffer?
+#else
+        struct glcontext *gl = ctx->glcontext;
+
         GLuint framebuffer_read_id;
         GLuint framebuffer_draw_id;
 
@@ -268,6 +278,7 @@ static void camera_draw(struct ngl_node *node)
             ngli_glBindFramebuffer(gl, GL_READ_FRAMEBUFFER, framebuffer_read_id);
             ngli_glBindFramebuffer(gl, GL_DRAW_FRAMEBUFFER, framebuffer_draw_id);
         }
+#endif
     }
 }
 
@@ -276,9 +287,13 @@ static void camera_uninit(struct ngl_node *node)
     struct camera_priv *s = node->priv_data;
 
     if (s->pipe_fd) {
+#ifdef VULKAN_BACKEND
+        // TODO
+#else
         ngli_free(s->pipe_buf);
         ngli_fbo_reset(&s->fbo);
         ngli_texture_reset(&s->fbo_color);
+#endif
     }
 }
 

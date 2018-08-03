@@ -94,6 +94,9 @@ int ngli_format_get_bytes_per_pixel(int format);
 
 int ngli_format_get_nb_comp(int format);
 
+#ifdef VULKAN_BACKEND
+int ngli_format_get_vk_format(struct glcontext *vk, int data_format, VkFormat *format);
+#else
 int ngli_format_get_gl_texture_format(struct glcontext *gl,
                                       int data_format,
                                       GLint *formatp,
@@ -104,5 +107,6 @@ int ngli_format_get_gl_renderbuffer_format(struct glcontext *gl,
                                            int data_format,
                                            GLint *formatp);
 
+#endif
 
 #endif

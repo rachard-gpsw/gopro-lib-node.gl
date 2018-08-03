@@ -23,7 +23,12 @@
 #define GLCONTEXT_H
 
 #include <stdlib.h>
+
+#ifdef VULKAN_BACKEND
+#include <vulkan/vulkan.h>
+#else
 #include "glfunctions.h"
+#endif
 #include "nodegl.h"
 
 #define NGLI_FEATURE_VERTEX_ARRAY_OBJECT          (1 << 0)
@@ -60,9 +65,65 @@
                                          NGLI_FEATURE_SHADER_IMAGE_LOAD_STORE  | \
                                          NGLI_FEATURE_SHADER_STORAGE_BUFFER_OBJECT)
 
+#ifdef VULKAN_BACKEND
+struct vk_swapchain_support {
+    VkSurfaceCapabilitiesKHR caps;
+    VkSurfaceFormatKHR *formats;
+    uint32_t nb_formats;
+    VkPresentModeKHR *present_modes;
+    uint32_t nb_present_modes;
+};
+#else
 struct glcontext_class;
+#endif
 
 struct glcontext {
+#ifdef VULKAN_BACKEND
+    struct ngl_config config;
+
+    VkDevice device;
+    VkExtent2D extent;
+    VkRenderPass render_pass;
+
+    VkQueue graphic_queue;
+    VkQueue present_queue;
+
+    VkInstance instance;
+    VkDebugReportCallbackEXT report_callback;
+    VkPhysicalDevice physical_device;
+    VkPhysicalDeviceMemoryProperties phydev_mem_props;
+    int queue_family_graphics_id;
+    int queue_family_present_id;
+    VkSurfaceKHR surface;
+    struct vk_swapchain_support swapchain_support;
+    VkSurfaceFormatKHR surface_format;
+    VkPresentModeKHR present_mode;
+    VkSwapchainKHR swapchain;
+    VkImage *images;
+    uint32_t nb_images;
+    VkImageView *image_views;
+    uint32_t nb_image_views;
+    VkFramebuffer *framebuffers;
+    int nb_framebuffers;
+    VkSemaphore *sem_img_avail;
+    VkSemaphore *sem_render_finished;
+    VkFence *fences;
+    VkStructureType surface_create_type;
+
+    uint32_t img_index;
+
+    int nb_in_flight_frames;
+    int current_frame;
+
+    VkCommandPool clear_pool;
+    VkCommandBuffer *clear_cmd_buf;
+    int nb_clear_cmd_buf;
+
+    // final command buffers queue
+    VkCommandBuffer command_buffers[64]; // FIXME
+    int nb_command_buffers;
+
+#else
     /* GL context */
     const struct glcontext_class *class;
     void *priv_data;
@@ -89,6 +150,7 @@ struct glcontext {
 
     /* GL functions */
     struct glfunctions funcs;
+#endif
 };
 
 struct glcontext_class {
@@ -121,6 +183,10 @@ void ngli_glcontext_freep(struct glcontext **glcontext);
 int ngli_glcontext_check_extension(const char *extension, const char *extensions);
 int ngli_glcontext_check_gl_error(const struct glcontext *glcontext, const char *context);
 
+#ifdef VULKAN_BACKEND
+int ngli_vk_find_memory_type(struct glcontext *vk, uint32_t type_filter, VkMemoryPropertyFlags props);
+#else
 #include "glwrappers.h"
+#endif
 
 #endif /* GLCONTEXT_H */

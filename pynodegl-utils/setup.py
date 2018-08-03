@@ -38,6 +38,9 @@ setup(name='pynodegl-utils',
               'examples/shaders/*.frag',
               'examples/shaders/*.comp',
               'examples/shaders/*.vert',
+              'examples/shaders/vk/*.frag',
+              'examples/shaders/vk/*.comp',
+              'examples/shaders/vk/*.vert',
           ],
       }
 )

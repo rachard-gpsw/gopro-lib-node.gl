@@ -154,9 +154,9 @@ $ android/hook.get_remote_dir
 /sdcard/nodegl_data
 ```
 
-### hook.get_gl_backend
+### hook.get_backend
 
-`hook.get_gl_backend` does not take any argument. It must print on `stdout` the
+`hook.get_backend` does not take any argument. It must print on `stdout` the
 string `gl` or `gles`. It corresponds to the OpenGL backend specified in the
 scene configuration when constructed.
 
@@ -165,7 +165,7 @@ This hook is not mandatory.
 **Example**:
 
 ```shell
-$ android/hook.get_gl_backend
+$ android/hook.get_backend
 gles
 ```
 

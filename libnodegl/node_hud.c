@@ -253,12 +253,14 @@ struct latency_measure {
 struct widget_latency {
     struct latency_measure measures[NB_LATENCY];
 
+#ifndef VULKAN_BACKEND
     GLuint query;
     void (*glGenQueries)(const struct glcontext *gl, GLsizei n, GLuint * ids);
     void (*glDeleteQueries)(const struct glcontext *gl, GLsizei n, const GLuint * ids);
     void (*glBeginQuery)(const struct glcontext *gl, GLenum target, GLuint id);
     void (*glEndQuery)(const struct glcontext *gl, GLenum target);
     void (*glGetQueryObjectui64v)(const struct glcontext *gl, GLuint id, GLenum pname, GLuint64 *params);
+#endif
 };
 
 struct widget_memory {
@@ -301,16 +303,24 @@ struct widget_spec {
 
 /* Widget init */
 
+#ifdef VULKAN_BACKEND
+// TODO
+#else
 static void noop(const struct glcontext *gl, ...)
 {
 }
+#endif
 
 static int widget_latency_init(struct ngl_node *node, struct widget *widget)
 {
-    struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct hud_priv *s = node->priv_data;
     struct widget_latency *priv = widget->priv_data;
+
+#ifdef VULKAN_BACKEND
+    // TODO
+#else
+    struct ngl_ctx *ctx = node->ctx;
+    struct glcontext *gl = ctx->glcontext;
 
     if (gl->features & NGLI_FEATURE_TIMER_QUERY) {
         priv->glGenQueries          = ngli_glGenQueries;
@@ -333,6 +343,7 @@ static int widget_latency_init(struct ngl_node *node, struct widget *widget)
     }
 
     priv->glGenQueries(gl, 1, &priv->query);
+#endif
 
     ngli_assert(NB_LATENCY == NGLI_ARRAY_NB(priv->measures));
 
@@ -445,10 +456,17 @@ static int widget_latency_update(struct ngl_node *node, struct widget *widget, d
     int ret;
     struct hud_priv *s = node->priv_data;
     struct ngl_node *child = s->child;
+    struct widget_latency *priv = widget->priv_data;
 
+#ifdef VULKAN_BACKEND
+    int64_t update_start = ngli_gettime();
+    ret = ngli_node_update(child, t);
+    int64_t update_end = ngli_gettime();
+
+    register_time(s, &priv->measures[LATENCY_UPDATE_CPU], update_end - update_start);
+#else
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;
-    struct widget_latency *priv = widget->priv_data;
 
     int timer_active = ctx->timer_active;
     if (timer_active) {
@@ -472,6 +490,7 @@ static int widget_latency_update(struct ngl_node *node, struct widget *widget, d
 
     register_time(s, &priv->measures[LATENCY_UPDATE_CPU], update_end - update_start);
     register_time(s, &priv->measures[LATENCY_UPDATE_GPU], gpu_tupdate);
+#endif
 
     return ret;
 }
@@ -481,10 +500,24 @@ static int widget_latency_update(struct ngl_node *node, struct widget *widget, d
 static void widget_latency_make_stats(struct ngl_node *node, struct widget *widget)
 {
     struct hud_priv *s = node->priv_data;
-    struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct widget_latency *priv = widget->priv_data;
 
+#ifdef VULKAN_BACKEND
+    // TODO
+    const int64_t draw_start = ngli_gettime();
+    ngli_node_draw(s->child);
+    const int64_t draw_end = ngli_gettime();
+
+    int64_t cpu_tdraw = draw_end - draw_start;
+    register_time(s, &priv->measures[LATENCY_DRAW_CPU], cpu_tdraw);
+
+    const struct latency_measure *cpu_up = &priv->measures[LATENCY_UPDATE_CPU];
+    const int last_cpu_up_pos = (cpu_up->pos ? cpu_up->pos : s->measure_window) - 1;
+    const int64_t cpu_tupdate = cpu_up->times[last_cpu_up_pos];
+    register_time(s, &priv->measures[LATENCY_TOTAL_CPU], cpu_tdraw + cpu_tupdate);
+#else
+    struct ngl_ctx *ctx = node->ctx;
+    struct glcontext *gl = ctx->glcontext;
     int timer_active = ctx->timer_active;
     if (!timer_active) {
         ctx->timer_active = 1;
@@ -514,6 +547,7 @@ static void widget_latency_make_stats(struct ngl_node *node, struct widget *widg
     const int64_t gpu_tupdate = gpu_up->times[last_gpu_up_pos];
     register_time(s, &priv->measures[LATENCY_TOTAL_CPU], cpu_tdraw + cpu_tupdate);
     register_time(s, &priv->measures[LATENCY_TOTAL_GPU], gpu_tdraw + gpu_tupdate);
+#endif
 }
 
 static void widget_memory_make_stats(struct ngl_node *node, struct widget *widget)
@@ -879,13 +913,17 @@ static void widget_drawcall_csv_report(struct ngl_node *node, struct widget *wid
 
 static void widget_latency_uninit(struct ngl_node *node, struct widget *widget)
 {
-    struct ngl_ctx *ctx = node->ctx;
-    struct glcontext *gl = ctx->glcontext;
     struct widget_latency *priv = widget->priv_data;
 
     for (int i = 0; i < NB_LATENCY; i++)
         ngli_free(priv->measures[i].times);
+#ifdef VULKAN_BACKEND
+    // TODO
+#else
+    struct ngl_ctx *ctx = node->ctx;
+    struct glcontext *gl = ctx->glcontext;
     priv->glDeleteQueries(gl, 1, &priv->query);
+#endif
 }
 
 static void widget_memory_uninit(struct ngl_node *node, struct widget *widget)
