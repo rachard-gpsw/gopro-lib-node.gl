@@ -11,6 +11,12 @@ out gl_PerVertex {
 layout(location = 0) in vec3 ngl_position;
 layout(location = 1) in vec2 ngl_uvcoord;
 
+layout(location=5) out test_block {
+    vec3 foo;
+    layout(location=3) vec2 bar;
+    float what;
+} test_instance;
+
 layout(push_constant) uniform ngl_block {
     mat4 modelview_matrix;
     mat4 projection_matrix;

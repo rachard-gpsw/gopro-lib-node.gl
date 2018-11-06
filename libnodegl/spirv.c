@@ -23,9 +23,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "darray.h"
+#include "hmap.h"
+#include "log.h"
 #include "spirv.h"
 #include "utils.h"
-#include "hmap.h"
 #include "memory.h"
 
 struct spirv_header {
@@ -36,372 +38,530 @@ struct spirv_header {
     uint32_t reserved;
 };
 
-struct shader_variable_internal {
-    const char *name;
-    uint16_t offset;
+struct obj_member {
+    uint32_t index;
+    char *name;
+    uint32_t offset;
+    enum object_type type;
 };
 
-struct shader_type_internal
-{
-    const char *name;
-    struct shader_variable_internal variables[8];
-    uint8_t nb_variables;
-    uint16_t size;
-    uint8_t index;
-    uint16_t flag;
+struct obj {
+    uint32_t id;
+    char *name;
+    struct darray members;
+
+    /* type */
+    enum object_type type;
+    uint32_t size;
+    uint32_t target;
+
+    /* variable? */
+    uint32_t descriptor_set;
+    uint32_t binding;
+    uint32_t location;
+    enum object_type target_type;
+
+    enum storage_class storage_class;
 };
 
-// TODO: remove stack limitation?
-struct shader_internal
+static void free_member(struct obj_member *member)
 {
-    struct shader_type_internal types[256];
-    uint8_t variable_type_indices[256];
-    uint8_t nb_variables;
-    uint8_t block_type_indices[256];
-    uint8_t nb_blocks;
+    ngli_free(member->name);
+}
+
+static void free_obj_members(struct darray *obj_members_array)
+{
+    struct obj_member *obj_members = ngli_darray_data(obj_members_array);
+    for (int i = 0; i < ngli_darray_count(obj_members_array); i++)
+        free_member(&obj_members[i]);
+    ngli_darray_reset(obj_members_array);
+}
+
+static void free_obj(struct obj *obj)
+{
+    free_obj_members(&obj->members);
+    ngli_free(obj->name);
+}
+
+static void free_objs(struct darray *objs_array)
+{
+    struct obj *objs = ngli_darray_data(objs_array);
+    for (int i = 0; i < ngli_darray_count(objs_array); i++)
+        free_obj(&objs[i]);
+    ngli_darray_reset(objs_array);
+}
+
+static struct obj *get_obj(struct darray *objs_array, uint32_t id)
+{
+    struct obj *objs = ngli_darray_data(objs_array);
+    for (int i = 0; i < ngli_darray_count(objs_array); i++)
+        if (objs[i].id == id)
+            return &objs[i];
+
+    struct obj *obj = ngli_darray_push(objs_array, NULL);
+    if (!obj)
+        return NULL;
+    memset(obj, 0, sizeof(*obj));
+    obj->id = id;
+    ngli_darray_init(&obj->members, sizeof(struct obj_member), 0);
+    return obj;
+}
+
+// FIXME: non-lazy alloc so params can be made const
+static struct obj_member *get_obj_member(struct darray *objs_array, uint32_t id, uint32_t index)
+{
+    struct obj *obj = get_obj(objs_array, id);
+    if (!obj)
+        return NULL;
+
+    struct darray *members_array = &obj->members;
+    struct obj_member *members = ngli_darray_data(members_array);
+    for (int i = 0; i < ngli_darray_count(members_array); i++)
+        if (members[i].index == index)
+            return &members[i];
+
+    struct obj_member *member = ngli_darray_push(&obj->members, NULL);
+    if (!member)
+        return NULL;
+    memset(member, 0, sizeof(*member));
+    member->index = index;
+    return member;
+}
+
+static char *get_spv_string(const uint32_t *code, size_t code_size, int code_pos)
+{
+    const char *str = (const char *)&code[code_pos];
+    code_size -= code_pos * sizeof(*code);
+
+    size_t len = 0;
+    while (len < code_size && str[len])
+        len++;
+
+    /* original source string may not be nul-terminated (maliciously) so we do
+     * it manually */
+    char *dupstr = ngli_malloc(len + 1);
+    if (!dupstr)
+        return NULL;
+    memcpy(dupstr, str, len);
+    dupstr[len] = 0;
+
+    return dupstr;
+}
+
+static int op_name(struct darray *obj_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *obj = get_obj(obj_array, code[1]);
+    if (!obj)
+        return -1;
+    ngli_free(obj->name);
+    obj->name = get_spv_string(code, code_size, 2);
+    if (!obj->name)
+        return -1;
+    return 0;
+}
+
+static int op_membername(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj_member *member = get_obj_member(objs_array, code[1], code[2]);
+    if (!member)
+        return -1;
+    ngli_free(member->name);
+    member->name = get_spv_string(code, code_size, 3);
+    if (!member->name)
+        return -1;
+    return 0;
+}
+
+static int op_typefloat(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *result = get_obj(objs_array, code[1]);
+    result->size = code[2] / 8;
+    if (result->size == 4)
+        result->type = NGLI_SPIRV_OBJECT_TYPE_FLOAT;
+    return 0;
+}
+
+static int op_typevector(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *result           = get_obj(objs_array, code[1]);
+    const struct obj *comp_type  = get_obj(objs_array, code[2]);
+    const uint32_t comp_count    = code[3];
+    result->size = comp_type->size * comp_count;
+    switch (comp_count) {
+        case 2: result->type = NGLI_SPIRV_OBJECT_TYPE_VEC2; break;
+        case 3: result->type = NGLI_SPIRV_OBJECT_TYPE_VEC3; break;
+        case 4: result->type = NGLI_SPIRV_OBJECT_TYPE_VEC4; break;
+    }
+    return 0;
+}
+
+static int op_typematrix(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *result         = get_obj(objs_array, code[1]);
+    const struct obj *col_type = get_obj(objs_array, code[2]);
+    if (!result || !col_type)
+        return -1;
+    result->size = col_type->size * code[3];
+    if (result->size == 64)
+        result->type = NGLI_SPIRV_OBJECT_TYPE_MAT4;
+    return 0;
+}
+
+static int op_typeimage(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *result = get_obj(objs_array, code[1]);
+    if (!result)
+        return -1;
+    result->type = NGLI_SPIRV_OBJECT_TYPE_IMAGE;
+    return 0;
+}
+
+static int op_typesampledimage(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *result = get_obj(objs_array, code[1]);
+    if (!result)
+        return -1;
+    result->target = code[2];
+    result->type = NGLI_SPIRV_OBJECT_TYPE_SAMPLED_IMAGE;
+
+    struct obj *target = get_obj(objs_array, result->target);
+    if (!target)
+        return -1;
+    return 0;
+}
+
+static int op_typestruct(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *result = get_obj(objs_array, code[1]);
+    if (!result)
+        return -1;
+
+    const int nb_members = code_size/sizeof(*code) - 2;
+    if (nb_members != result->members.count)
+        return -1;
+
+    struct obj_member *members = ngli_darray_data(&result->members);
+    for (uint32_t i = 0; i < nb_members; i++) {
+        struct obj *member_obj = get_obj(objs_array, code[2 + i]);
+        if (!member_obj)
+            return -1;
+        if (result->size + member_obj->size < result->size)
+            return -1;
+        result->size += member_obj->size;
+
+        members[i].type = member_obj->type;
+    }
+    if (result->type != NGLI_SPIRV_OBJECT_TYPE_BLOCK)
+        result->type = NGLI_SPIRV_OBJECT_TYPE_STRUCT;
+    return 0;
+}
+
+static enum storage_class get_storage_class(uint32_t value)
+{
+    static const enum storage_class st_classes[] = {
+        [ 0] = NGLI_SPIRV_STORAGE_CLASS_UNIFORM_CONSTANT,
+        [ 1] = NGLI_SPIRV_STORAGE_CLASS_INPUT,
+        [ 2] = NGLI_SPIRV_STORAGE_CLASS_UNIFORM,
+        [ 3] = NGLI_SPIRV_STORAGE_CLASS_OUTPUT,
+        [ 9] = NGLI_SPIRV_STORAGE_CLASS_PUSH_CONSTANT,
+        [12] = NGLI_SPIRV_STORAGE_CLASS_STORAGE_BUFFER,
+    };
+    if (value >= NGLI_ARRAY_NB(st_classes))
+        return NGLI_SPIRV_STORAGE_CLASS_UNSUPPORTED;
+    return st_classes[value];
+}
+
+static int op_typepointer(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *result = get_obj(objs_array, code[1]);
+    if (!result)
+        return -1;
+    result->storage_class = get_storage_class(code[2]);
+    result->target = code[3];
+    result->type = NGLI_SPIRV_OBJECT_TYPE_POINTER;
+
+    struct obj *target = get_obj(objs_array, result->target);
+    if (!target)
+        return -1;
+    result->target_type = target->type;
+    return 0;
+}
+
+static int op_variable(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *pointer = get_obj(objs_array, code[1]);
+    struct obj *result  = get_obj(objs_array, code[2]);
+
+    result->storage_class = get_storage_class(code[3]);
+
+    result->type = NGLI_SPIRV_OBJECT_TYPE_VARIABLE;
+    if (pointer->type != NGLI_SPIRV_OBJECT_TYPE_POINTER ||
+        result->storage_class != pointer->storage_class)
+        return -1;
+
+    result->target = pointer->target;
+    result->target_type = pointer->target_type;
+
+    return 0;
+}
+
+static int op_decorate(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj *obj = get_obj(objs_array, code[1]);
+    if (!obj)
+        return -1;
+
+    const uint32_t decoration = code[2];
+    const uint32_t extra = code_size > 3 * sizeof(*code) ? code[3] : 0;
+
+    switch (decoration) {
+        //case 2:  obj->type = NGLI_SPIRV_OBJECT_TYPE_STRUCT; break;
+
+        case 30: obj->location       = extra; break;
+        case 33: obj->binding        = extra; break;
+        case 34: obj->descriptor_set = extra; break;
+    }
+    return 0;
+}
+
+static int op_memberdecorate(struct darray *objs_array, const uint32_t *code, size_t code_size)
+{
+    struct obj_member *member = get_obj_member(objs_array, code[1], code[2]);
+    if (!member)
+        return -1;
+
+    const uint32_t decoration = code[3];
+    const uint32_t extra = code_size > 4 * sizeof(*code) ? code[4] : 0;
+
+    if (decoration == 35)
+        member->offset = extra;
+
+    return 0;
+}
+
+static const struct {
+    int (*func)(struct darray *objs_array, const uint32_t *code, size_t code_size);
+    int min_words;
+} op_map[] = {
+    [ 5] = {op_name,             3},
+    [ 6] = {op_membername,       4},
+    [22] = {op_typefloat,        3},
+    [23] = {op_typevector,       4},
+    [24] = {op_typematrix,       4},
+    [25] = {op_typeimage,        9},
+    [27] = {op_typesampledimage, 3},
+    [30] = {op_typestruct,       2},
+    [32] = {op_typepointer,      4},
+    [59] = {op_variable,         4},
+    [71] = {op_decorate,         3},
+    [72] = {op_memberdecorate,   4},
 };
 
-struct spirv_probe* ngli_spirv_probe(const uint32_t *code, size_t size)
+static struct spirv_block *create_block(struct hmap *blocks, const char *key, const struct obj *obj)
 {
-    // header
+    struct spirv_block *block = ngli_calloc(1, sizeof(*block));
+    if (!block)
+        return NULL;
+
+    int ret = ngli_hmap_set(blocks, key, block);
+    if (ret < 0) {
+        ngli_free(block);
+        return NULL;
+    }
+
+    ngli_darray_init(&block->members, sizeof(struct spirv_block_member), 0);
+    block->size = obj->size;
+    return block;
+}
+
+static void free_block(void *user_arg, void *arg)
+{
+    struct spirv_block *block = arg;
+    struct darray *members_array = &block->members;
+    struct spirv_block_member *members = ngli_darray_data(members_array);
+    for (int i = 0; i < ngli_darray_count(members_array); i++)
+        ngli_free(members[i].name);
+    ngli_darray_reset(&block->members);
+    ngli_free(block);
+}
+
+static int track_blocks(struct spirv_probe *s, struct darray *objs_array)
+{
+    s->blocks = ngli_hmap_create();
+    if (!s->blocks)
+        return -1;
+    ngli_hmap_set_free(s->blocks, free_block, NULL);
+
+    struct obj *objs = ngli_darray_data(objs_array);
+    for (int i = 0; i < ngli_darray_count(objs_array); i++) {
+        struct obj *obj = &objs[i];
+        if (obj->type != NGLI_SPIRV_OBJECT_TYPE_STRUCT)
+            continue;
+
+        struct spirv_block *block = create_block(s->blocks, obj->name, obj);
+        if (!block)
+            return -1;
+
+        const struct darray *members_array = &obj->members;
+        for (int mb_idx = 0; mb_idx < ngli_darray_count(members_array); mb_idx++) {
+            const struct obj_member *member = get_obj_member(objs_array, obj->id, mb_idx);
+            if (!member)
+                return -1;
+            struct spirv_block_member *block_member = ngli_darray_push(&block->members, NULL);
+            if (!block_member)
+                return -1;
+            block_member->offset = member->offset;
+            block_member->name = ngli_strdup(member->name);
+            block_member->type = member->type;
+        }
+    }
+
+    return 0;
+}
+
+static struct spirv_variable *create_variable(struct hmap *variables, const char *key, const struct obj *obj)
+{
+    struct spirv_variable *variable = ngli_calloc(1, sizeof(*variable));
+    if (!variable)
+        return NULL;
+
+    int ret = ngli_hmap_set(variables, key, variable);
+    if (ret < 0) {
+        ngli_free(variable);
+        return NULL;
+    }
+
+    variable->descriptor_set = obj->descriptor_set;
+    variable->binding        = obj->binding;
+    variable->location       = obj->location;
+    variable->storage_class  = obj->storage_class;
+    return variable;
+}
+
+static void free_variable(void *user_arg, void *arg)
+{
+    struct spirv_variable *variable = arg;
+    //ngli_free(variable->block_name);
+    ngli_free(variable);
+}
+
+static int track_variables(struct spirv_probe *s, struct darray *objs_array)
+{
+    s->variables = ngli_hmap_create();
+    if (!s->variables)
+        return -1;
+    ngli_hmap_set_free(s->variables, free_variable, NULL);
+
+    const struct obj *objs = ngli_darray_data(objs_array);
+    for (int i = 0; i < ngli_darray_count(objs_array); i++) {
+        const struct obj *obj = &objs[i];
+        if (obj->type != NGLI_SPIRV_OBJECT_TYPE_VARIABLE ||
+            obj->storage_class == NGLI_SPIRV_STORAGE_CLASS_UNSUPPORTED)
+            continue;
+
+        struct obj *obj_target = get_obj(objs_array, obj->target);
+        if (!obj_target)
+            return -1;
+
+        if (obj_target->type == NGLI_SPIRV_OBJECT_TYPE_STRUCT) {
+#if 0
+            struct darray *members_array = &obj_target->members;
+            struct obj_member *members = ngli_darray_data(members_array);
+            for (int mb_idx = 0; mb_idx < ngli_darray_count(members_array); mb_idx++) {
+                const struct obj_member *member = &members[mb_idx];
+
+                char *key = ngli_asprintf("%s%s%s", obj->name, *obj->name ? "." : "", member->name);
+                if (!key)
+                    return -1;
+
+                struct spirv_variable *variable = create_variable(s->variables, key, obj);
+                ngli_free(key);
+                if (!variable)
+                    return -1;
+
+                variable->type        = member->type;
+
+                //variable->block_member_index = member->index;
+                //variable->block_name         = ngli_strdup(obj_target->name);
+                //if (!variable->block_name) {
+                //    free_variable(NULL, variable);
+                //    return -1;
+                //}
+            }
+#else
+            struct spirv_variable *variable = create_variable(s->variables, obj->name, obj);
+            if (!variable)
+                return -1;
+
+            variable->type = obj->target_type;
+            //continue;
+#endif
+        } else {
+            struct spirv_variable *variable = create_variable(s->variables, obj->name, obj);
+            if (!variable)
+                return -1;
+
+            variable->type = obj->target_type;
+        }
+    }
+    return 0;
+}
+
+struct spirv_probe *ngli_spirv_probe(const uint32_t *code, size_t size)
+{
     if (size < sizeof(struct spirv_header))
         return NULL;
 
-    struct spirv_header *header = (struct spirv_header*)code;
+    const struct spirv_header *header = (struct spirv_header *)code;
     if (header->magic != 0x07230203)
         return NULL;
     if (header->version != 0x00010000) // XXX: allow more?
         return NULL;
 
-    code += sizeof(struct spirv_header) / sizeof(uint32_t);
-    size -= sizeof(struct spirv_header);
+    code += sizeof(*header) / sizeof(*code);
+    size -= sizeof(*header);
 
-    // data
-    struct shader_internal internal;
-    memset(&internal, 0, sizeof(internal));
+    struct spirv_probe *s = ngli_calloc(1, sizeof(*s));
+    if (!s)
+        return NULL;
+
+    struct darray objs_array;
+    ngli_darray_init(&objs_array, sizeof(struct obj), 0);
 
     while (size > 0) {
         const uint32_t opcode0    = code[0];
         const uint16_t opcode     = opcode0 & 0xffff;
         const uint16_t word_count = opcode0 >> 16;
 
-        // check instruction size
-        const uint32_t instruction_size = word_count * sizeof(uint32_t);
-        if (size < instruction_size)
-            return NULL;
+        const uint32_t instr_size = word_count * sizeof(*code);
+        if (instr_size > size) {
+            ngli_spirv_freep(&s);
+            goto end;
+        }
 
-        switch(opcode) {
-            // OpName
-            case 5: {
-                const uint32_t type_id = code[1];
-                const char *name = (const char *)&code[2];
-
-                struct shader_type_internal *type = &internal.types[type_id];
-                type->name = name;
-                break;
-            }
-
-            // OpMemberName
-            case 6: {
-                const uint32_t type_id = code[1];
-                const uint32_t variable_index = code[2];
-                const char *name = (const char *)&code[3];
-
-                struct shader_type_internal *type = &internal.types[type_id];
-                type->nb_variables++;
-
-                struct shader_variable_internal *variable = &type->variables[variable_index];
-                variable->name = name;
-                break;
-            }
-
-            // OpTypeFloat
-            case 22: {
-                const uint32_t type_id = code[1];
-                const uint32_t type_size = code[2];
-                struct shader_type_internal *type = &internal.types[type_id];
-                type->size = type_size / 8;
-                break;
-            }
-
-            // OpTypeVector
-            case 23: {
-                const uint32_t type_id = code[1];
-                const uint32_t component_type_id = code[2];
-                const uint32_t component_count = code[3];
-                struct shader_type_internal *type = &internal.types[type_id];
-                struct shader_type_internal *component_type = &internal.types[component_type_id];
-                type->size = component_type->size * component_count;
-                break;
-            }
-
-            // OpTypeMatrix
-            case 24: {
-                const uint32_t type_id = code[1];
-                const uint32_t column_type_id = code[2];
-                const uint32_t column_count = code[3];
-                struct shader_type_internal *type = &internal.types[type_id];
-                struct shader_type_internal *column_type = &internal.types[column_type_id];
-                type->size = column_type->size * column_count;
-                break;
-            }
-
-            // OpTypeImage
-            case 25: {
-                const uint32_t type_id = code[1];
-                struct shader_type_internal *type = &internal.types[type_id];
-                type->flag |= NGLI_SHADER_TEXTURE;
-                break;
-            }
-
-            // OpTypeSampler
-            case 26: {
-                const uint32_t pointer_id = code[1];
-                const uint32_t type_id = code[2];
-
-                struct shader_type_internal *pointer_type = &internal.types[pointer_id];
-                pointer_type->flag = NGLI_SHADER_INDIRECTION;
-                pointer_type->index = type_id;
-
-                struct shader_type_internal *type = &internal.types[type_id];
-                type->flag |= NGLI_SHADER_SAMPLER;
-                break;
-            }
-            // OpTypeSampledImage
-            case 27: {
-                const uint32_t pointer_id = code[1];
-                const uint32_t type_id = code[2];
-
-                struct shader_type_internal *pointer_type = &internal.types[pointer_id];
-                pointer_type->flag = NGLI_SHADER_INDIRECTION;
-                pointer_type->index = type_id;
-
-                struct shader_type_internal *type = &internal.types[type_id];
-                type->flag |= NGLI_SHADER_SAMPLER;
-                break;
-            }
-
-            // OpTypeRuntimeArray
-            case 29: {
-                const uint32_t pointer_id = code[1];
-                const uint32_t type_id = code[2];
-
-                struct shader_type_internal *type = &internal.types[pointer_id];
-                type->index = type_id;
-                type->flag = (uint8_t)-1;
-                break;
-            }
-
-            // OpTypeStruct
-            case 30: {
-                const uint32_t type_id = code[1];
-
-                struct shader_type_internal *type = &internal.types[type_id];
-                const uint8_t last_variable_index = type->nb_variables - 1;
-                const uint32_t member_type_id = code[2 + last_variable_index];
-                struct shader_type_internal *member_type = &internal.types[member_type_id];
-                struct shader_variable_internal *variable = &type->variables[last_variable_index];
-                type->size = variable->offset + member_type->size;
-                break;
-            }
-
-            // OpTypePointer
-            case 32: {
-                const uint32_t pointer_id = code[1];
-                const uint32_t storage_type = code[2];
-                const uint32_t type_id = code[3];
-
-                switch (storage_type) {
-                    case 0:   // UniformConstant
-                    case 2: { // Uniform
-                        struct shader_type_internal *type = &internal.types[pointer_id];
-                        type->flag = NGLI_SHADER_INDIRECTION;
-                        type->index = type_id;
-                        break;
-                    }
-
-                    // PushConstant
-                    case 9: {
-                        struct shader_type_internal *type = &internal.types[pointer_id];
-                        type->flag = NGLI_SHADER_INDIRECTION;
-                        type->index = type_id;
-
-                        struct shader_type_internal *block_type = &internal.types[type_id];
-                        block_type->flag &= ~NGLI_SHADER_UNIFORM;
-                        block_type->flag |= NGLI_SHADER_CONSTANT;
-                        break;
-                    }
+        if (opcode < NGLI_ARRAY_NB(op_map) && op_map[opcode].func) {
+            if (word_count >= op_map[opcode].min_words) {
+                int ret = op_map[opcode].func(&objs_array, code, instr_size);
+                if (ret < 0) {
+                    LOG(ERROR, "unable to handle opcode %d: %d", opcode, ret);
+                    ngli_spirv_freep(&s);
+                    goto end;
                 }
-                break;
-            }
-
-            // OpVariable
-            case 59: {
-                const uint32_t pointer_id = code[1];
-                const uint32_t type_id = code[2];
-                const uint32_t storage_type = code[3];
-
-                struct shader_type_internal *type = &internal.types[type_id];
-                switch (storage_type) {
-                    // Input
-                    case 1: {
-                        type->flag |= NGLI_SHADER_INPUT;
-                        break;
-                    }
-
-                    case 0: // UniformConstant
-                    case 2: // Uniform
-                    case 9: {
-                        // indirection to proper structureu
-                        uint32_t block_id = pointer_id;
-                        struct shader_type_internal *block_type = NULL;
-                        do {
-                            block_type = &internal.types[block_id];
-                            block_id = block_type->index;
-                        } while(block_type->flag == NGLI_SHADER_INDIRECTION); // FIXME: use & instead of ==
-
-                        memcpy(type->variables, block_type->variables, sizeof(type->variables));
-                        type->nb_variables = block_type->nb_variables;
-                        type->size = block_type->size;
-                        type->flag = block_type->flag;
-                        internal.block_type_indices[internal.nb_blocks++] = type_id;
-                    }
-
-                    // Output
-                    case 3: {
-                        type->flag |= NGLI_SHADER_OUTPUT;
-                        break;
-                    }
-
-                }
-                break;
-            }
-
-            // OpDecorate
-            case 71: {
-                const uint32_t type_id = code[1];
-                const uint32_t decoration = code[2];
-                switch (decoration) {
-                    // Block
-                    case 2: {
-                        struct shader_type_internal *type = &internal.types[type_id];
-                        type->flag |= NGLI_SHADER_BLOCK;
-                        type->flag |= NGLI_SHADER_UNIFORM;
-                        break;
-                    }
-
-                    // Buffer Block
-                    case 3: {
-                        struct shader_type_internal *type = &internal.types[type_id];
-                        type->flag |= NGLI_SHADER_BLOCK;
-                        type->flag |= NGLI_SHADER_STORAGE;
-                        break;
-                    }
-
-                    // Location
-                    case 30: {
-                        const uint32_t index = code[3];
-                        internal.types[type_id].index = index;
-                        internal.types[type_id].flag |= NGLI_SHADER_ATTRIBUTE;
-                        internal.variable_type_indices[internal.nb_variables++] = type_id;
-                        break;
-                    }
-
-                    case 33: {
-                        const uint32_t index = code[3];
-                        internal.types[type_id].index = index;
-                        break;
-                    }
-                }
-                break;
-            }
-
-            // OpMemberDecorate
-            case 72: {
-                const uint32_t type_id = code[1];
-                const uint32_t variable_index = code[2];
-                const uint32_t decoration = code[3];
-
-                // Offset
-                if(decoration == 35) {
-                    const uint32_t offset = code[4];
-                    struct shader_variable_internal *variable = &internal.types[type_id].variables[variable_index];
-                    variable->offset = offset;
-                }
-                break;
             }
         }
+
         code += word_count;
-        size -= instruction_size;
+        size -= instr_size;
     }
 
-    // allocate spirv_probe memory
-    uint32_t variable_bytes = internal.nb_variables * sizeof(struct spirv_variable);
-    uint32_t block_bytes = internal.nb_blocks * sizeof(struct spirv_block);
-    for (uint32_t i = 0; i < internal.nb_blocks; i++) {
-        const uint8_t block_type_id = internal.block_type_indices[i];
-        struct shader_type_internal *type = &internal.types[block_type_id];
-        block_bytes += type->nb_variables * sizeof(struct spirv_variable);
-    }
-    uint32_t reflection_bytes = sizeof(struct spirv_probe) + variable_bytes + block_bytes;
-    uint8_t *allocation = ngli_malloc(reflection_bytes);
+    if (track_blocks(s, &objs_array) < 0 ||
+        track_variables(s, &objs_array) < 0)
+        ngli_spirv_freep(&s);
 
-    // initialize spirv_probe
-    struct spirv_probe *spirv_probe = (struct spirv_probe*)allocation;
-    spirv_probe->attributes = internal.nb_variables ? ngli_hmap_create() : NULL;
-    spirv_probe->bindings = internal.nb_blocks ? ngli_hmap_create() : NULL;
+end:
+    free_objs(&objs_array);
 
-    // initialize variables
-    struct spirv_variable *variable = (struct spirv_variable*)(allocation + sizeof(struct spirv_probe));
-    for (uint32_t i = 0; i < internal.nb_variables; i++) {
-        const uint8_t variable_type_id = internal.variable_type_indices[i];
-        struct shader_type_internal *type = &internal.types[variable_type_id];
-
-        variable->offset = type->index;
-        variable->flag = type->flag;
-        ngli_hmap_set(spirv_probe->attributes, type->name, variable++);
-    }
-
-    // initialize bindings
-    struct spirv_binding *binding = (struct spirv_binding*)variable;
-    for (uint32_t i = 0; i < internal.nb_blocks; i++) {
-        const uint8_t block_type_id = internal.block_type_indices[i];
-        struct shader_type_internal *type_internal = &internal.types[block_type_id];
-
-        binding->index = type_internal->index;
-        binding->flag = type_internal->flag;
-
-        // initialize block
-        uint32_t binding_byte = 0;
-        if (type_internal->flag & NGLI_SHADER_BLOCK) {
-            struct spirv_block *block = (struct spirv_block *)binding;
-            block->size = type_internal->size;
-            binding_byte += sizeof(struct spirv_block);
-            const uint32_t nb_variables = type_internal->nb_variables;
-            if (nb_variables > 0) {
-                block->variables = ngli_hmap_create();
-                struct spirv_variable *variable = (struct spirv_variable *)(((uint8_t*)binding) + binding_byte);
-                for (uint32_t j = 0; j < nb_variables; j++) {
-                    struct shader_variable_internal *v = &type_internal->variables[j];
-                    variable->offset = v->offset;
-                    variable->flag = 0;
-                    ngli_hmap_set(block->variables, v->name, variable++);
-                }
-                binding_byte += nb_variables * sizeof(struct spirv_variable);
-             }
-        } else if (type_internal->flag & NGLI_SHADER_TEXTURE) {
-            struct spirv_texture *texture = (struct spirv_texture *)binding;
-            texture->format = 0; // XXX
-            binding_byte += sizeof(struct spirv_texture);
-        } else {
-            ngli_assert(0);
-        }
-
-        ngli_hmap_set(spirv_probe->bindings, type_internal->name, binding);
-        binding = (struct spirv_binding*)(((uint8_t*)binding) + binding_byte);
-     }
-
-    return spirv_probe;
+    return s;
 }
 
 void ngli_spirv_freep(struct spirv_probe **probep)
@@ -410,21 +570,8 @@ void ngli_spirv_freep(struct spirv_probe **probep)
 
     if (!s)
         return;
-
-    ngli_hmap_freep(&s->attributes);
-
-    if (s->bindings) {
-        const struct hmap_entry *entry = NULL;
-        while ((entry = ngli_hmap_next(s->bindings, entry))) {
-            struct spirv_binding *binding = entry->data;
-            if (binding->flag & NGLI_SHADER_BLOCK) {
-                struct spirv_block *block = entry->data;
-                ngli_hmap_freep(&block->variables);
-            }
-        }
-    }
-    ngli_hmap_freep(&s->bindings);
-
+    ngli_hmap_freep(&s->variables);
+    ngli_hmap_freep(&s->blocks);
     ngli_free(s);
     *probep = NULL;
 }

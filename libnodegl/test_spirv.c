@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 GoPro Inc.
+ * Copyright 2018 GoPro Inc.
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -23,6 +23,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -30,14 +31,16 @@
 #include "spirv.h"
 #include "memory.h"
 
-static char *read_file(const char *filepath, uint32_t *size)
+static uint8_t *read_file(const char *filepath, uint32_t *size)
 {
-    char *buf = NULL;
+    uint8_t *buf = NULL;
     struct stat st;
 
     int fd = open(filepath, O_RDONLY);
-    if (fd == -1)
+    if (fd == -1) {
+        fprintf(stderr, "unable to open \"%s\"\n", filepath);
         goto end;
+    }
 
     if (fstat(fd, &st) == -1)
         goto end;
@@ -56,96 +59,85 @@ end:
     return buf;
 }
 
-#include <string.h>
+static const char *storage_class_str[] = {
+    [NGLI_SPIRV_STORAGE_CLASS_UNSUPPORTED]      = "Unsupported",
+    [NGLI_SPIRV_STORAGE_CLASS_INPUT]            = "Input",
+    [NGLI_SPIRV_STORAGE_CLASS_OUTPUT]           = "Output",
+    [NGLI_SPIRV_STORAGE_CLASS_UNIFORM]          = "Uniform",
+    [NGLI_SPIRV_STORAGE_CLASS_UNIFORM_CONSTANT] = "UniformConstant",
+    [NGLI_SPIRV_STORAGE_CLASS_PUSH_CONSTANT]    = "PushConstant",
+    [NGLI_SPIRV_STORAGE_CLASS_STORAGE_BUFFER]   = "StorageBuffer",
+};
 
-static const char *get_flag_name(uint32_t flag) {
-    static char result[64];
-    static const char *names[]= {
-        "input",
-        "output",
-        "attribute",
-        "block",
-        "constant",
-        "sampler",
-        "texture",
-        "uniforn",
-        "storage",
-        "dynamic",
-        "indirection"
-    };
+static const char *object_type_str[] = {
+    [NGLI_SPIRV_OBJECT_TYPE_UNSUPPORTED]   = "Unsupported",
+    [NGLI_SPIRV_OBJECT_TYPE_VARIABLE]      = "Variable",
+    [NGLI_SPIRV_OBJECT_TYPE_FLOAT]         = "Float",
+    [NGLI_SPIRV_OBJECT_TYPE_VEC2]          = "Vec2",
+    [NGLI_SPIRV_OBJECT_TYPE_VEC3]          = "Vec3",
+    [NGLI_SPIRV_OBJECT_TYPE_VEC4]          = "Vec4",
+    [NGLI_SPIRV_OBJECT_TYPE_MAT4]          = "Mat4",
+    [NGLI_SPIRV_OBJECT_TYPE_POINTER]       = "Pointer",
+    [NGLI_SPIRV_OBJECT_TYPE_STRUCT]        = "Struct",
+    [NGLI_SPIRV_OBJECT_TYPE_IMAGE]         = "Image",
+    [NGLI_SPIRV_OBJECT_TYPE_SAMPLED_IMAGE] = "Sampler",
+};
 
-    memset(result, 0, sizeof(result));
-    char *cursor = result;
-    static uint32_t nb_flags = sizeof(names) / sizeof(names[0]);
-    for (uint8_t i = 0; i < nb_flags; i++) {
-        if ((flag & (1 << i)) != 0) {
-            uint32_t length = strlen(names[i]);
-            memcpy(cursor, names[i], length);
-            cursor[length] = ' ';
-            cursor = cursor + length + 1;
+static void dump_block_defs(struct hmap *blocks)
+{
+    printf("Blocks:\n");
+    const struct hmap_entry *entry = NULL;
+    while ((entry = ngli_hmap_next(blocks, entry))) {
+        const struct spirv_block *block = entry->data;
+        printf("  %s (size=%d):\n", entry->key, block->size);
+
+        const struct darray *block_members_array = &block->members;
+        const struct spirv_block_member *block_members = ngli_darray_data(block_members_array);
+        for (int i = 0; i < ngli_darray_count(block_members_array); i++) {
+            const struct spirv_block_member *block_member = &block_members[i];
+            printf("    %-12s %-32s @ %d\n",
+                   object_type_str[block_member->type],
+                   block_member->name, block_member->offset);
         }
     }
-    *cursor = 0;
-
-    return result;
 }
 
-int main(int argc, char *argv[])
+static void dump_variables(struct hmap *variables)
 {
-    const char *filepath = argv[1];
+    printf("Variables:\n");
+    const struct hmap_entry *entry = NULL;
+    while ((entry = ngli_hmap_next(variables, entry))) {
+        const struct spirv_variable *variable = entry->data;
+        printf("  %-12s %-30s", object_type_str[variable->type], entry->key);
+        printf("   dset:%3d", variable->descriptor_set);
+        printf("   binding:%3d", variable->binding);
+        printf("   location:%3d", variable->location);
+        printf("   storage_class:%-15s", storage_class_str[variable->storage_class]);
+        printf("\n");
+    }
+}
+
+int main(int ac, char **av)
+{
+    if (ac != 2) {
+        fprintf(stderr, "Usage: %s <file.spv>\n", av[0]);
+        return -1;
+    }
 
     uint32_t shader_size;
-    char *shader_code = read_file(filepath, &shader_size);
+    uint8_t *shader_code = read_file(av[1], &shader_size);
     if (!shader_code)
         return -1;
 
-    struct spirv_probe *s = ngli_spirv_probe((uint32_t*)shader_code, shader_size);
+    struct spirv_probe *s = ngli_spirv_probe((uint32_t *)shader_code, shader_size);
+    ngli_free(shader_code);
     if (!s)
         return -1;
-    ngli_free(shader_code);
 
-    printf("filename: %s\n\n", filepath);
+    dump_block_defs(s->blocks);
+    printf("\n");
+    dump_variables(s->variables);
 
-    if (s->attributes) {
-        printf("attributes: (%d)\n", ngli_hmap_count(s->attributes));
-        const struct hmap_entry *attribute_entry = NULL;
-        while ((attribute_entry = ngli_hmap_next(s->attributes, attribute_entry))) {
-            const struct spirv_attribute *attribute = attribute_entry->data;
-            printf("\t%s:\n", attribute_entry->key);
-            printf("\t\ttype: %s\n", get_flag_name(attribute->flag));
-            printf("\t\tindex: %d\n", attribute->index);
-         }
-    }
-
-    printf("\nbindings: (%d)\n", s->bindings ? ngli_hmap_count(s->bindings) : 0);
-    if (s->bindings) {
-        const struct hmap_entry *binding_entry = NULL;
-        while ((binding_entry = ngli_hmap_next(s->bindings, binding_entry))) {
-            const struct spirv_binding *binding = binding_entry->data;
-            if ((binding->flag & NGLI_SHADER_BLOCK)) {
-                const struct spirv_block *block = binding_entry->data;
-                printf("\t%s:\n", binding_entry->key);
-                printf("\t\ttype: %s\n", get_flag_name(binding->flag));
-                printf("\t\tindex: %d\n", binding->index);
-                printf("\t\tsize: %d\n", block->size);
-                printf("\t\tvariables:\n");
-                if (block->variables) {
-                    const struct hmap_entry *variable_entry = NULL;
-                    while ((variable_entry = ngli_hmap_next(block->variables, variable_entry))) {
-                        const struct spirv_variable *variable = variable_entry->data;
-                        printf("\t\t\t%20s offset: %d\n", variable_entry->key, variable->offset);
-                    }
-                }
-            } else if ((binding->flag & NGLI_SHADER_TEXTURE)) {
-                const struct spirv_texture *texture = binding_entry->data;
-                printf("\t\t%s\ttype: %s\tindex: %d\tformat: %d\n",
-                       binding_entry->key,
-                       get_flag_name(binding->flag),
-                       binding->index,
-                       texture->format);
-            }
-        }
-    }
     ngli_spirv_freep(&s);
 
     return 0;

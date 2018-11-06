@@ -25,49 +25,57 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-enum {
-    NGLI_SHADER_INPUT           = 1 << 0,
-    NGLI_SHADER_OUTPUT          = 1 << 1,
-    NGLI_SHADER_ATTRIBUTE       = 1 << 2,
-    NGLI_SHADER_BLOCK           = 1 << 3,
-    NGLI_SHADER_CONSTANT        = 1 << 4,
-    NGLI_SHADER_SAMPLER         = 1 << 5,
-    NGLI_SHADER_TEXTURE         = 1 << 6,
-    NGLI_SHADER_UNIFORM         = 1 << 7,
-    NGLI_SHADER_STORAGE         = 1 << 8,
-    NGLI_SHADER_DYNAMIC         = 1 << 9,
-    NGLI_SHADER_INDIRECTION     = 1 << 10
+#include "hmap.h"
+#include "darray.h"
+
+enum storage_class {
+    NGLI_SPIRV_STORAGE_CLASS_UNSUPPORTED,
+    NGLI_SPIRV_STORAGE_CLASS_INPUT,
+    NGLI_SPIRV_STORAGE_CLASS_OUTPUT,
+    NGLI_SPIRV_STORAGE_CLASS_UNIFORM,
+    NGLI_SPIRV_STORAGE_CLASS_UNIFORM_CONSTANT,
+    NGLI_SPIRV_STORAGE_CLASS_PUSH_CONSTANT,
+    NGLI_SPIRV_STORAGE_CLASS_STORAGE_BUFFER,
 };
 
-struct spirv_attribute {
-    uint8_t index;
-    uint16_t flag;
-};
-
-struct spirv_binding {
-    uint16_t flag;
-    uint8_t index;
+enum object_type {
+    NGLI_SPIRV_OBJECT_TYPE_UNSUPPORTED,
+    NGLI_SPIRV_OBJECT_TYPE_VARIABLE,
+    NGLI_SPIRV_OBJECT_TYPE_FLOAT,
+    NGLI_SPIRV_OBJECT_TYPE_VEC2,
+    NGLI_SPIRV_OBJECT_TYPE_VEC3,
+    NGLI_SPIRV_OBJECT_TYPE_VEC4,
+    NGLI_SPIRV_OBJECT_TYPE_MAT4,
+    NGLI_SPIRV_OBJECT_TYPE_POINTER,
+    NGLI_SPIRV_OBJECT_TYPE_STRUCT,
+    NGLI_SPIRV_OBJECT_TYPE_IMAGE,
+    NGLI_SPIRV_OBJECT_TYPE_SAMPLED_IMAGE,
+    NGLI_SPIRV_OBJECT_TYPE_BLOCK,
 };
 
 struct spirv_variable {
-    uint16_t offset;
-    uint16_t flag;
+    int descriptor_set;
+    int binding;
+    int location;
+    enum storage_class storage_class;
+    enum object_type type;
+};
+
+struct spirv_block_member {
+    char *name;
+    enum storage_class storage_class;
+    enum object_type type;
+    int offset;
 };
 
 struct spirv_block {
-    struct spirv_binding binding;
-    uint16_t size;
-    struct hmap *variables;
-};
-
-struct spirv_texture {
-    struct spirv_binding binding;
-    uint32_t format;
+    int size;                   // total size in bytes
+    struct darray members;      // struct spirv_block_member
 };
 
 struct spirv_probe {
-    struct hmap *attributes;
-    struct hmap *bindings;
+    struct hmap *blocks;        // struct spirv_block
+    struct hmap *variables;     // struct spirv_variable
 };
 
 struct spirv_probe *ngli_spirv_probe(const uint32_t *code, size_t size);
