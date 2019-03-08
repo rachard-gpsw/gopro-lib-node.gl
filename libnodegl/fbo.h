@@ -38,7 +38,10 @@ struct fbo {
     int width;
     int height;
 
-#ifndef VULKAN_BACKEND
+#ifdef VULKAN_BACKEND
+    VkFramebuffer framebuffer;
+    VkRenderPass render_pass;
+#else
     GLuint id;
     GLuint prev_id;
     struct darray depth_indices;

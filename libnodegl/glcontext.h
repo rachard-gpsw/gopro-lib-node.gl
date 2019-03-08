@@ -80,6 +80,7 @@ struct glcontext {
     VkDevice device;
     VkExtent2D extent;
     VkRenderPass render_pass;
+    VkRenderPass current_render_pass;
 
     VkQueue graphic_queue;
     VkQueue present_queue;
@@ -101,6 +102,7 @@ struct glcontext {
     uint32_t nb_image_views;
     VkFramebuffer *framebuffers;
     int nb_framebuffers;
+    VkFramebuffer current_framebuffer;
     VkSemaphore *sem_img_avail;
     VkSemaphore *sem_render_finished;
     VkFence *fences;

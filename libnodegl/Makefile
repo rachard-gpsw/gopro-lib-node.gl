@@ -67,6 +67,7 @@ LIB_OBJS = animation.o              \
            darray.o                 \
            deserialize.o            \
            dot.o                    \
+           fbo.o                    \
            format.o                 \
            glstate.o                \
            hmap.o                   \

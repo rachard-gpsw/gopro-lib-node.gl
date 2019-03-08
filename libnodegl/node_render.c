@@ -245,10 +245,8 @@ static VkResult create_graphics_pipeline(struct ngl_node *node, VkPipeline *pipe
     };
 
     /* Dynamic states */
-#if 0
     VkDynamicState dynamic_states[] = {
         VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_LINE_WIDTH,
     };
 
     VkPipelineDynamicStateCreateInfo dynamic_state_create_info = {
@@ -257,7 +255,7 @@ static VkResult create_graphics_pipeline(struct ngl_node *node, VkPipeline *pipe
         .pDynamicStates = dynamic_states,
 
     };
-#endif
+
     VkGraphicsPipelineCreateInfo graphics_pipeline_create_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount = NGLI_ARRAY_NB(program->shader_stage_create_info),
@@ -269,7 +267,7 @@ static VkResult create_graphics_pipeline(struct ngl_node *node, VkPipeline *pipe
         .pMultisampleState = &multisampling_state_create_info,
         .pDepthStencilState = NULL,
         .pColorBlendState = &colorblend_state_create_info,
-        .pDynamicState = NULL,
+        .pDynamicState = &dynamic_state_create_info,
         .layout = pipeline->pipeline_layout,
         .renderPass = vk->render_pass,
         .subpass = 0,
@@ -796,19 +794,31 @@ static void render_draw(struct ngl_node *node)
     if (ret != VK_SUCCESS)
         return;
 
+
     const float *rgba = vk->config.clear_color;
     VkClearValue clear_color = {.color.float32={rgba[0], rgba[1], rgba[2], rgba[3]}};
     VkRenderPassBeginInfo render_pass_begin_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = vk->render_pass,
-        .framebuffer = vk->framebuffers[vk->img_index],
+        .renderPass = vk->current_render_pass,
+        .framebuffer = vk->current_framebuffer,
         .renderArea = {
-            .extent = vk->extent,
+            .extent = {
+                vk->config.width,
+                vk->config.height,
+            },
         },
         .clearValueCount = 1,
         .pClearValues = &clear_color,
     };
 
+    VkViewport viewport = {
+        .width = vk->config.width,
+        .height = vk->config.height,
+        .minDepth = 0.f,
+        .maxDepth = 1.f,
+    };
+    LOG(ERROR, "w=%d h=%d", vk->config.width);
+    vkCmdSetViewport(cmd_buf, 0, 1, &viewport);
     vkCmdBeginRenderPass(cmd_buf, &render_pass_begin_info,
                          VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, s->pipeline.vkpipeline);

@@ -68,7 +68,6 @@ static const struct node_param rtt_params[] = {
     {NULL}
 };
 
-#ifndef VULKAN_BACKEND
 static int has_stencil(int format)
 {
     switch (format) {
@@ -79,7 +78,6 @@ static int has_stencil(int format)
         return 0;
     }
 }
-#endif
 
 static int rtt_init(struct ngl_node *node)
 {
@@ -93,6 +91,73 @@ static int rtt_init(struct ngl_node *node)
 
 #ifdef VULKAN_BACKEND
 // TODO
+static int rtt_prefetch(struct ngl_node *node)
+{
+    struct ngl_ctx *ctx = node->ctx;
+    struct glcontext *vk = ctx->glcontext;
+    struct rtt_priv *s = node->priv_data;
+    struct texture_priv *texture = s->color_texture->priv_data;
+    struct texture *t = &texture->texture;
+    struct texture_params *params = &t->params;
+    s->width = params->width;
+    s->height = params->height;
+
+    LOG(ERROR, ">>");
+
+    const struct texture *attachments[2] = {&texture->texture};
+    int nb_attachments = 1;
+
+    struct fbo_params fbo_params = {
+        .width = s->width,
+        .height = s->height,
+        .nb_attachments = nb_attachments,
+        .attachments = attachments,
+    };
+    int ret = ngli_fbo_init(&s->fbo, vk, &fbo_params);
+    if (ret < 0)
+        return ret;
+
+    return 0;
+}
+
+static int rtt_update(struct ngl_node *node, double t)
+{
+    struct rtt_priv *s = node->priv_data;
+    int ret = ngli_node_update(s->child, t);
+    if (ret < 0)
+        return ret;
+
+    if (s->depth_texture) {
+        ret = ngli_node_update(s->depth_texture, t);
+        if (ret < 0)
+            return ret;
+    }
+
+    return ngli_node_update(s->color_texture, t);
+}
+
+static void rtt_draw(struct ngl_node *node)
+{
+    struct ngl_ctx *ctx = node->ctx;
+    struct glcontext *vk = ctx->glcontext;
+    struct rtt_priv *s = node->priv_data;
+
+    LOG(ERROR, ">>");
+    VkRenderPass render_pass = vk->current_render_pass;
+    VkFramebuffer framebuffer = vk->current_framebuffer;
+    vk->current_render_pass = s->fbo.render_pass;
+    vk->current_framebuffer = s->fbo.framebuffer;
+    int width = vk->config.width;
+    int height = vk->config.height;
+    vk->config.width = s->fbo.width;
+    vk->config.height = s->fbo.height;
+    ngli_node_draw(s->child);
+    vk->current_render_pass = render_pass;
+    vk->current_framebuffer = framebuffer;
+    vk->config.width = width;
+    vk->config.height = height;
+}
+
 #else
 static int rtt_prefetch(struct ngl_node *node)
 {
@@ -301,8 +366,12 @@ static void rtt_release(struct ngl_node *node)
 const struct node_class ngli_rtt_class = {
     .id        = NGL_NODE_RENDERTOTEXTURE,
     .name      = "RenderToTexture",
+#ifdef VULKAN_BACKEND
     .init      = rtt_init,
-#ifndef VULKAN_BACKEND
+    .prefetch  = rtt_prefetch,
+    .update    = rtt_update,
+    .draw      = rtt_draw,
+#else
     .prefetch  = rtt_prefetch,
     .update    = rtt_update,
     .draw      = rtt_draw,

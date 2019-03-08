@@ -563,6 +563,7 @@ static VkResult create_swapchain(struct glcontext *vk)
     LOG(INFO, "swapchain image count: %d [%d-%d]", img_count,
            swap->caps.minImageCount, swap->caps.maxImageCount);
 
+    LOG(ERROR, "vk->surface_format.format=%d", vk->surface_format.format);
     VkSwapchainCreateInfoKHR swapchain_create_info = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = vk->surface,
@@ -1137,6 +1138,9 @@ static int vk_pre_draw(struct ngl_ctx *s, double t)
     ret = vk_clear(vk);
     if (ret < 0)
         return ret;
+
+    vk->current_render_pass = vk->render_pass;
+    vk->current_framebuffer = vk->framebuffers[vk->img_index];
 
     return ret;
 }
