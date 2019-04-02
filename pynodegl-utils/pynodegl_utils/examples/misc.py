@@ -265,7 +265,7 @@ def particules(cfg, particules=32):
 
     ipositions = ngl.Block(fields=[ngl.BufferVec3(data=positions)], layout='std430')
     ivelocities = ngl.Block(fields=[ngl.BufferVec2(data=velocities)], layout='std430')
-    opositions = ngl.Block(fields=[ngl.BufferVec3(count=p)], layout='std430')
+    opositions = ngl.Block(fields=[ngl.UniformFloat(), ngl.BufferVec3(count=p)], layout='std430')
 
     animkf = [ngl.AnimKeyFrameFloat(0, 0),
               ngl.AnimKeyFrameFloat(cfg.duration, 1)]
@@ -291,13 +291,18 @@ def particules(cfg, particules=32):
         width=(quad_width, 0, 0),
         height=(0, quad_width, 0)
     )
+
+    vertices = ngl.BufferVec3(block=opositions, block_field=1)
+
+    quad = ngl.Geometry(vertices=vertices)
+    quad.set_topology('points')
+
     p = ngl.Program(
         vertex=vertex_shader,
         fragment=fragment_shader,
     )
-    r = ngl.Render(quad, p, nb_instances=particules)
+    r = ngl.Render(quad, p)
     r.update_uniforms(color=ngl.UniformVec4(value=(0, .6, .8, .9)))
-    r.update_blocks(positions_buffer=opositions)
 
     r = ngl.GraphicConfig(r,
                           blend=True,
