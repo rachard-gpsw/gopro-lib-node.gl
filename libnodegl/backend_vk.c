@@ -637,6 +637,24 @@ static VkResult create_swapchain_image_views(struct glcontext *vk)
     return VK_SUCCESS;
 }
 
+static VkResult create_depth_images(struct glcontext *vk)
+{
+    vk->nb_depth_images = vk->nb_images;
+    vk->depth_images = ngli_calloc(vk->nb_depth_images, sizeof(*vk->depth_images));
+    if (!vk->depth_images)
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    for (uint32_t i = 0; i < vk->nb_depth_images; i++) {
+        struct texture_params params = NGLI_TEXTURE_PARAM_DEFAULTS;
+        params.format = NGLI_FORMAT_D32_SFLOAT;
+        params.width = vk->config.width;
+        params.height = vk->config.height;
+        ngli_texture_init(&vk->depth_images[i], vk, &params);
+    }
+    LOG(ERROR, "coucou");
+
+    return VK_SUCCESS;
+}
+
 static VkResult create_render_pass(struct glcontext *vk)
 {
     VkAttachmentDescription color_attachment = {
@@ -655,10 +673,27 @@ static VkResult create_render_pass(struct glcontext *vk)
         .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
     };
 
+    VkAttachmentDescription depth_attachment = {
+        .format = VK_FORMAT_D32_SFLOAT, /* FIXME */
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
+    VkAttachmentReference depth_attachment_ref = {
+        .attachment = 1,
+        .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+    };
+
     VkSubpassDescription subpass = {
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
         .pColorAttachments = &color_attachment_ref,
+        .pDepthStencilAttachment = &depth_attachment_ref,
     };
 
     VkSubpassDependency dependency = {
@@ -668,10 +703,12 @@ static VkResult create_render_pass(struct glcontext *vk)
         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
     };
 
+    const VkAttachmentDescription attachments[] = { color_attachment, depth_attachment};
+
     VkRenderPassCreateInfo render_pass_create_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &color_attachment,
+        .attachmentCount = NGLI_ARRAY_NB(attachments),
+        .pAttachments = attachments,
         .subpassCount = 1,
         .pSubpasses = &subpass,
         .dependencyCount = 1,
@@ -692,11 +729,16 @@ static VkResult create_swapchain_framebuffers(struct glcontext *vk)
         //    vk->image_views[i]
         //};
 
+        VkImageView attachments[] = {
+            vk->image_views[i],
+            vk->depth_images[i].image_view,
+        };
+
         VkFramebufferCreateInfo framebuffer_create_info = {
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass = vk->render_pass,
-            .attachmentCount = 1,
-            .pAttachments = &vk->image_views[i], //attachments,
+            .attachmentCount = NGLI_ARRAY_NB(attachments),
+            .pAttachments = attachments, //attachments,
             .width = vk->extent.width,
             .height = vk->extent.height,
             .layers = 1,
@@ -879,6 +921,7 @@ static int vulkan_init(struct glcontext *vk, uintptr_t display, uintptr_t window
         (ret = create_swapchain(vk)) != VK_SUCCESS ||
         (ret = create_swapchain_images(vk)) != VK_SUCCESS ||
         (ret = create_swapchain_image_views(vk)) != VK_SUCCESS ||
+        (ret = create_depth_images(vk)) != VK_SUCCESS ||
         (ret = create_render_pass(vk)) != VK_SUCCESS ||
         (ret = create_swapchain_framebuffers(vk)) != VK_SUCCESS ||
         (ret = create_clear_command_pool(vk)) != VK_SUCCESS ||
@@ -966,6 +1009,7 @@ static int reset_swapchain(struct glcontext *vk)
     if ((ret = create_swapchain(vk)) != VK_SUCCESS ||
         (ret = create_swapchain_images(vk)) != VK_SUCCESS ||
         (ret = create_swapchain_image_views(vk)) != VK_SUCCESS ||
+        (ret = create_depth_images(vk)) != VK_SUCCESS ||
         (ret = create_render_pass(vk)) != VK_SUCCESS ||
         (ret = create_swapchain_framebuffers(vk)) != VK_SUCCESS ||
         (ret = create_clear_command_buffers(vk)) != VK_SUCCESS)
@@ -996,6 +1040,9 @@ static void vulkan_uninit(struct glcontext *vk)
     vkDestroySurfaceKHR(vk->instance, vk->surface, NULL);
     ngli_free(vk->images);
     ngli_free(vk->image_views);
+    for (int i = 0; i < vk->nb_depth_images; i++)
+        ngli_texture_reset(&vk->depth_images[i]);
+    ngli_free(vk->depth_images);
     vkDestroyDevice(vk->device, NULL);
 #if ENABLE_DEBUG
     void *proc_addr = vulkan_get_proc_addr(vk, "vkDestroyDebugReportCallbackEXT");

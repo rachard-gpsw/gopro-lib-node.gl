@@ -59,6 +59,35 @@ VkSamplerAddressMode ngli_texture_get_vk_wrap(int wrap)
     return vk_wrap_map[wrap];
 }
 
+static VkImageAspectFlags get_vk_image_aspect_flags(VkFormat format)
+{
+    switch (format) {
+    case VK_FORMAT_D16_UNORM:
+    case VK_FORMAT_D32_SFLOAT:
+        return VK_IMAGE_ASPECT_DEPTH_BIT;
+    case VK_FORMAT_D16_UNORM_S8_UINT:
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+    default:
+        return VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+}
+
+static int is_depth_format(VkFormat format)
+{
+    switch (format) {
+    case VK_FORMAT_D16_UNORM:
+    case VK_FORMAT_D32_SFLOAT:
+    case VK_FORMAT_D16_UNORM_S8_UINT:
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int find_memory_type(struct glcontext *vk, uint32_t type_filter, VkMemoryPropertyFlags props)
 {
     for (int i = 0; i < vk->phydev_mem_props.memoryTypeCount; i++)
@@ -163,8 +192,15 @@ int ngli_texture_init(struct texture *s,
 
     /* FIXME */
     ngli_format_get_vk_format(vk, s->params.format, &s->format);
+    LOG(ERROR, ">>%d", s->format);
 
     VkImageUsageFlagBits usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+    if (is_depth_format(s->format)) {
+        usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    } else {
+        usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    }
+
     create_image(vk, s->params.width, s->params.height, s->format, VK_IMAGE_TILING_OPTIMAL, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &s->image, &s->image_memory);
     s->image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -173,7 +209,7 @@ int ngli_texture_init(struct texture *s,
         .image = s->image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = s->format,
-        .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .subresourceRange.aspectMask = get_vk_image_aspect_flags(s->format),
         .subresourceRange.baseMipLevel = 0,
         .subresourceRange.levelCount = 1,
         .subresourceRange.baseArrayLayer = 0,
@@ -279,7 +315,7 @@ static VkResult copy_buffer_to_image(struct texture *s, VkBuffer buffer, VkImage
         .bufferOffset = 0,
         .bufferRowLength = 0,
         .bufferImageHeight = 0,
-        .imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .imageSubresource.aspectMask = get_vk_image_aspect_flags(s->format),
         .imageSubresource.mipLevel = 0,
         .imageSubresource.baseArrayLayer = 0,
         .imageSubresource.layerCount = 1,
@@ -309,7 +345,7 @@ static VkResult transition_image_layout(struct texture *s, VkImage image, VkForm
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = image,
-        .subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .subresourceRange.aspectMask = get_vk_image_aspect_flags(s->format),
         .subresourceRange.baseMipLevel = 0,
         .subresourceRange.levelCount = 1,
         .subresourceRange.baseArrayLayer = 0,

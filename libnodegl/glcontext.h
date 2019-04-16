@@ -103,6 +103,10 @@ struct glcontext {
     uint32_t nb_images;
     VkImageView *image_views;
     uint32_t nb_image_views;
+    struct texture *depth_images;
+    uint32_t nb_depth_images;
+
+
     VkFramebuffer *framebuffers;
     int nb_framebuffers;
     VkSemaphore *sem_img_avail;

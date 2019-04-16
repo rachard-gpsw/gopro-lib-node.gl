@@ -374,7 +374,14 @@ static void render_draw(struct ngl_node *node)
         return;
 
     const float *rgba = vk->config.clear_color;
-    VkClearValue clear_color = {.color.float32={rgba[0], rgba[1], rgba[2], rgba[3]}};
+    VkClearValue clear_values[] = {
+        {
+            .color.float32 = {rgba[0], rgba[1], rgba[2], rgba[3]}
+        },
+        {
+            .color.float32 = {rgba[0], rgba[1], rgba[2], rgba[3]}
+        },
+    };
     VkRenderPassBeginInfo render_pass_begin_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = vk->render_pass,
@@ -382,8 +389,8 @@ static void render_draw(struct ngl_node *node)
         .renderArea = {
             .extent = vk->extent,
         },
-        .clearValueCount = 1,
-        .pClearValues = &clear_color,
+        .clearValueCount = NGLI_ARRAY_NB(clear_values),
+        .pClearValues = clear_values,
     };
 
     vkCmdBeginRenderPass(cmd_buf, &render_pass_begin_info,
