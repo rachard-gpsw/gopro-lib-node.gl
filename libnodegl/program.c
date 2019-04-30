@@ -113,6 +113,40 @@ static void free_pinfo(void *user_arg, void *data)
     ngli_free(data);
 }
 
+static const struct {
+    GLenum gl_type;
+    int type;
+} types_map[] = {
+    {GL_INT,                         NGLI_TYPE_INT},
+    {GL_INT_VEC2,                    NGLI_TYPE_IVEC2},
+    {GL_INT_VEC3,                    NGLI_TYPE_IVEC3},
+    {GL_INT_VEC4,                    NGLI_TYPE_IVEC4},
+    {GL_UNSIGNED_INT,                NGLI_TYPE_UINT},
+    {GL_UNSIGNED_INT_VEC2,           NGLI_TYPE_UIVEC2},
+    {GL_UNSIGNED_INT_VEC3,           NGLI_TYPE_UIVEC3},
+    {GL_UNSIGNED_INT_VEC4,           NGLI_TYPE_UIVEC4},
+    {GL_FLOAT,                       NGLI_TYPE_FLOAT},
+    {GL_FLOAT_VEC2,                  NGLI_TYPE_VEC2},
+    {GL_FLOAT_VEC3,                  NGLI_TYPE_VEC3},
+    {GL_FLOAT_VEC4,                  NGLI_TYPE_VEC4},
+    {GL_FLOAT_MAT4,                  NGLI_TYPE_MAT4},
+    {GL_BOOL,                        NGLI_TYPE_BOOL},
+    {GL_SAMPLER_2D,                  NGLI_TYPE_SAMPLER_2D},
+    {GL_SAMPLER_3D,                  NGLI_TYPE_SAMPLER_3D},
+    {GL_SAMPLER_CUBE,                NGLI_TYPE_SAMPLER_CUBE},
+    {GL_SAMPLER_EXTERNAL_OES,        NGLI_TYPE_SAMPLER_EXTERNAL_OES},
+    {GL_SAMPLER_EXTERNAL_2D_Y2Y_EXT, NGLI_TYPE_SAMPLER_2D_Y2Y_EXT},
+    {GL_IMAGE_2D,                    NGLI_TYPE_IMAGE_2D},
+};
+
+static int get_type(GLenum gl_type)
+{
+    for (int i = 0; i < NGLI_ARRAY_NB(types_map); i++)
+        if (types_map[i].gl_type == gl_type)
+            return types_map[i].type;
+    return NGLI_TYPE_NONE;
+}
+
 struct hmap *ngli_program_probe_uniforms(const char *node_label, struct glcontext *gl, GLuint pid)
 {
     struct hmap *umap = ngli_hmap_create();
@@ -129,14 +163,23 @@ struct hmap *ngli_program_probe_uniforms(const char *node_label, struct glcontex
             ngli_hmap_freep(&umap);
             return NULL;
         }
+
+        GLenum type;
         ngli_glGetActiveUniform(gl, pid, i, sizeof(name), NULL,
-                                &info->size, &info->type, name);
+                                &info->size, &type, name);
+
+        info->type = get_type(type);
+        if (info->type == NGLI_TYPE_NONE) {
+            LOG(DEBUG, "unrecognized uniform type 0x%x, ignore", type);
+            ngli_free(info);
+            continue;
+        }
 
         /* Remove [0] suffix from names of uniform arrays */
         name[strcspn(name, "[")] = 0;
         info->location = ngli_glGetUniformLocation(gl, pid, name);
 
-        if (info->type == GL_IMAGE_2D) {
+        if (info->type == NGLI_TYPE_IMAGE_2D) {
             ngli_glGetUniformiv(gl, pid, info->location, &info->binding);
         } else {
             info->binding = -1;
@@ -171,8 +214,16 @@ struct hmap *ngli_program_probe_attributes(const char *node_label, struct glcont
             ngli_hmap_freep(&amap);
             return NULL;
         }
+
+        GLenum type;
         ngli_glGetActiveAttrib(gl, pid, i, sizeof(name), NULL,
-                               &info->size, &info->type, name);
+                               &info->size, &type, name);
+        info->type = get_type(type);
+        if (info->type == NGLI_TYPE_NONE) {
+            LOG(DEBUG, "unrecognized attribute type 0x%x, ignore", type);
+            ngli_free(info);
+            continue;
+        }
 
         info->location = ngli_glGetAttribLocation(gl, pid, name);
         LOG(DEBUG, "%s.attribute[%d/%d]: %s location:%d size=%d type=0x%x", node_label,
@@ -210,7 +261,7 @@ struct hmap *ngli_program_probe_buffer_blocks(const char *node_label, struct glc
             ngli_hmap_freep(&bmap);
             return NULL;
         }
-        info->type = GL_UNIFORM_BUFFER;
+        info->type = NGLI_TYPE_UNIFORM_BUFFER;
 
         ngli_glGetActiveUniformBlockName(gl, pid, i, sizeof(name), NULL, name);
         GLuint block_index = ngli_glGetUniformBlockIndex(gl, pid, name);
@@ -242,7 +293,7 @@ struct hmap *ngli_program_probe_buffer_blocks(const char *node_label, struct glc
             ngli_hmap_freep(&bmap);
             return NULL;
         }
-        info->type = GL_SHADER_STORAGE_BUFFER;
+        info->type = NGLI_TYPE_STORAGE_BUFFER;
 
         ngli_glGetProgramResourceName(gl, pid, GL_SHADER_STORAGE_BLOCK, i, sizeof(name), NULL, name);
         GLuint block_index = ngli_glGetProgramResourceIndex(gl, pid, GL_SHADER_STORAGE_BLOCK, name);

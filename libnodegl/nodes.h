@@ -41,6 +41,7 @@
 #endif
 
 #include "animation.h"
+#include "block.h"
 #include "drawutils.h"
 #include "glincludes.h"
 #include "glcontext.h"
@@ -257,6 +258,7 @@ struct buffer_priv {
 
     int fd;
     int dynamic;
+    int data_type;          // any of NGLI_TYPE_*
 
     struct buffer buffer;
     int buffer_refcount;
@@ -281,6 +283,7 @@ struct uniform_priv {
     int ival;
     void *data;
     int data_size;
+    int data_type;
     struct ngl_node *anim;
     struct ngl_node *transform;
     const float *transform_matrix;
@@ -289,23 +292,13 @@ struct uniform_priv {
     int live_changed;
 };
 
-struct block_field_info {
-    int spec_id;
-    int offset;
-    int size;
-    int stride;
-};
-
 struct block_priv {
     struct ngl_node **fields;
     int nb_fields;
     int layout;
 
-    struct block_field_info *field_info;
-    int nb_field_info;
-    uint8_t *data;
-    int data_size;
-    int usage;
+    struct variable *var_fields;
+    struct block block;
 
     struct buffer buffer;
     int buffer_refcount;
@@ -368,19 +361,19 @@ struct texture_priv {
 struct uniformprograminfo {
     GLint location;
     GLint size;
-    GLenum type;
+    int type;
     int binding;
 };
 
 struct attributeprograminfo {
     GLint location;
     GLint size;
-    GLenum type;
+    int type;
 };
 
 struct blockprograminfo {
     GLint binding;
-    GLenum type;
+    int type;
 };
 
 #define NGLI_SAMPLING_MODE_NONE         0

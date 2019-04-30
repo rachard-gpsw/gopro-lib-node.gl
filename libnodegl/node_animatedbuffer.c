@@ -118,11 +118,12 @@ static void animatedbuffer_uninit(struct ngl_node *node)
     s->data = NULL;
 }
 
-#define DEFINE_ABUFFER_CLASS(class_id, class_name, type, format)                   \
+#define DEFINE_ABUFFER_CLASS(class_id, class_name, type, format, dtype)            \
 static int animatedbuffer##type##_init(struct ngl_node *node)                      \
 {                                                                                  \
     struct buffer_priv *s = node->priv_data;                                       \
     s->data_format = format;                                                       \
+    s->data_type = dtype;                                                          \
     return animatedbuffer_init(node);                                              \
 }                                                                                  \
                                                                                    \
@@ -138,7 +139,7 @@ const struct node_class ngli_animatedbuffer##type##_class = {                   
     .file      = __FILE__,                                                         \
 };                                                                                 \
 
-DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERFLOAT, "AnimatedBufferFloat", float, NGLI_FORMAT_R32_SFLOAT)
-DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERVEC2,  "AnimatedBufferVec2",  vec2,  NGLI_FORMAT_R32G32_SFLOAT)
-DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERVEC3,  "AnimatedBufferVec3",  vec3,  NGLI_FORMAT_R32G32B32_SFLOAT)
-DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERVEC4,  "AnimatedBufferVec4",  vec4,  NGLI_FORMAT_R32G32B32A32_SFLOAT)
+DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERFLOAT, "AnimatedBufferFloat", float, NGLI_FORMAT_R32_SFLOAT,          NGLI_TYPE_FLOAT)
+DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERVEC2,  "AnimatedBufferVec2",  vec2,  NGLI_FORMAT_R32G32_SFLOAT,       NGLI_TYPE_VEC2)
+DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERVEC3,  "AnimatedBufferVec3",  vec3,  NGLI_FORMAT_R32G32B32_SFLOAT,    NGLI_TYPE_VEC3)
+DEFINE_ABUFFER_CLASS(NGL_NODE_ANIMATEDBUFFERVEC4,  "AnimatedBufferVec4",  vec4,  NGLI_FORMAT_R32G32B32A32_SFLOAT, NGLI_TYPE_VEC4)
