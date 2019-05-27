@@ -144,14 +144,10 @@ class SceneCfg:
         return odict
 
     def _get_vk_shader(self, name, stype, shader_path):
+        filename = '%s.%s' % (name, stype)
         if shader_path is None:
             shader_path = op.join(op.dirname(__file__), 'examples', 'shaders', 'vk')
-        src_path = op.join(shader_path, '%s.%s' % (name, stype))
-        dst_path = op.join(shader_path, '%s-%s.spv' % (name, stype))
-        print 'SPV: %s -> %s' % (src_path, dst_path)
-        ret = subprocess.call(['glslangValidator', '-V', '-o', dst_path, src_path])
-        assert ret == 0
-        return array.array('b', open(dst_path).read())
+        return open(op.join(shader_path, filename)).read()
 
     def _get_gl_shader(self, name, stype, shader_path):
         filename = '%s.%s' % (name, stype)

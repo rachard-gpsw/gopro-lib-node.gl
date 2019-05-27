@@ -866,6 +866,19 @@ static int vulkan_init(struct glcontext *vk, uintptr_t display, uintptr_t window
 
     // XXX: offscreen
 
+    vk->spirv_compiler      = shaderc_compiler_initialize();
+    vk->spirv_compiler_opts = shaderc_compile_options_initialize();
+    if (!vk->spirv_compiler || !vk->spirv_compiler_opts)
+        return -1;
+
+    //const shaderc_env_version env_version = app_info.apiVersion == VK_API_VERSION_1_0 ? shaderc_env_version_vulkan_1_0
+    //                                                                                  : shaderc_env_version_vulkan_1_1;
+    const shaderc_env_version env_version = shaderc_env_version_vulkan_1_0;
+    shaderc_compile_options_set_target_env(vk->spirv_compiler_opts, shaderc_target_env_vulkan, env_version);
+
+    //shaderc_compile_options_set_optimization_level(vk->spirv_compiler_opts,
+    //                                               shaderc_optimization_level_performance);
+
     if ((ret = probe_vulkan_extensions(vk)) != VK_SUCCESS ||
         (ret = list_vulkan_layers()) != VK_SUCCESS ||
         (ret = create_vulkan_instance(vk)) != VK_SUCCESS ||
@@ -1005,6 +1018,9 @@ static void vulkan_uninit(struct glcontext *vk)
     }
 #endif
     vkDestroyInstance(vk->instance, NULL);
+
+    shaderc_compiler_release(vk->spirv_compiler);
+    shaderc_compile_options_release(vk->spirv_compiler_opts);
 }
 
 static int vk_reconfigure(struct ngl_ctx *s, const struct ngl_config *config)

@@ -232,12 +232,17 @@ int ngli_program_init(struct program *s, struct ngl_ctx *ctx, const char *vertex
         const char *src;
         GLuint id;
     } shaders[] = {
-        {GL_VERTEX_SHADER,   vertex,   0},
-        {GL_FRAGMENT_SHADER, fragment, 0},
-        {GL_COMPUTE_SHADER,  compute,  0},
+        [NGLI_PROGRAM_SHADER_VERT] = {GL_VERTEX_SHADER,   vertex,   0},
+        [NGLI_PROGRAM_SHADER_FRAG] = {GL_FRAGMENT_SHADER, fragment, 0},
+        [NGLI_PROGRAM_SHADER_COMP] = {GL_COMPUTE_SHADER,  compute,  0},
     };
 
     struct glcontext *gl = ctx->glcontext;
+
+    if (compute && !(gl->features & NGLI_FEATURE_COMPUTE_SHADER_ALL)) {
+        LOG(ERROR, "context does not support compute shaders");
+        return -1;
+    }
 
     s->ctx = ctx;
     s->id = ngli_glCreateProgram(gl);

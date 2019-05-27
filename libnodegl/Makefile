@@ -166,6 +166,10 @@ LIB_EXTRA_CFLAGS_iPhone    = -I$(MVK_ROOT)/include/
 endif
 
 LIB_LDLIBS                 = -lm -lpthread
+ifeq ($(BACKEND),vk)
+LIB_LDLIBS                += -lshaderc_shared
+endif
+
 LIB_EXTRA_LDLIBS_Linux     =
 ifneq ($(BACKEND),vk)
 LIB_EXTRA_LDLIBS_Darwin    = -framework OpenGL -framework CoreVideo -framework CoreFoundation -framework AppKit -framework IOSurface
@@ -296,15 +300,6 @@ gl.xml:
 
 
 #
-# Vulkan default shader SPIR-V generation
-#
-vk_default_vert.h: vk/default.vert
-	glslangValidator -V --vn vk_default_vert -o $@ $<
-vk_default_frag.h: vk/default.frag
-	glslangValidator -V --vn vk_default_frag -o $@ $<
-node_program.o: vk_default_vert.h vk_default_frag.h
-
-#
 # Tests
 #
 TESTS = asm             \
@@ -376,6 +371,6 @@ vksdk: $(VKSDK_TGZ)
 $(VKSDK_TGZ):
 	wget $(VKSDK_BASEURL)/$@
 
-.PHONY: all updatespecs clean install uninstall gen-gl-wrappers vksdk update_vk_spirv
+.PHONY: all updatespecs clean install uninstall gen-gl-wrappers vksdk
 
 -include $(LIB_DEPS)

@@ -28,18 +28,15 @@
 #include "program.h"
 #include "spirv.h"
 
-int ngli_program_init(struct program *s, struct ngl_ctx *ctx,
-                      const uint8_t *vert_data, int vert_data_size,
-                      const uint8_t *frag_data, int frag_data_size,
-                      const uint8_t *comp_data, int comp_data_size)
+int ngli_program_init(struct program *s, struct ngl_ctx *ctx, const char *vertex, const char *fragment, const char *compute)
 {
     struct {
-        const uint32_t *code;
-        size_t code_size;
+        shaderc_shader_kind kind;
+        const char *src;
     } shaders[] = {
-        [NGLI_PROGRAM_SHADER_VERT] = {(const uint32_t *)vert_data, vert_data_size},
-        [NGLI_PROGRAM_SHADER_FRAG] = {(const uint32_t *)frag_data, frag_data_size},
-        [NGLI_PROGRAM_SHADER_COMP] = {(const uint32_t *)comp_data, comp_data_size},
+        [NGLI_PROGRAM_SHADER_VERT] = {shaderc_glsl_vertex_shader,   vertex,},
+        [NGLI_PROGRAM_SHADER_FRAG] = {shaderc_glsl_fragment_shader, fragment},
+        [NGLI_PROGRAM_SHADER_COMP] = {shaderc_glsl_compute_shader,  compute},
     };
 
     struct glcontext *vk = ctx->glcontext;
@@ -47,18 +44,28 @@ int ngli_program_init(struct program *s, struct ngl_ctx *ctx,
     s->ctx = ctx;
 
     for (int i = 0; i < NGLI_ARRAY_NB(s->shaders); i++) {
-        if (!shaders[i].code)
+        if (!shaders[i].src)
             continue;
         struct program_shader *shader = &s->shaders[i];
+
+        shader->result = shaderc_compile_into_spv(vk->spirv_compiler,
+                                                  shaders[i].src, strlen(shaders[i].src),
+                                                  shaders[i].kind,
+                                                  "whatever", "main", vk->spirv_compiler_opts);
+        if (shaderc_result_get_compilation_status(shader->result) != shaderc_compilation_status_success)
+            return -1;
+
+        const uint32_t *code = (const uint32_t *)shaderc_result_get_bytes(shader->result);
+        const size_t code_size = shaderc_result_get_length(shader->result);
         VkShaderModuleCreateInfo shader_module_create_info = {
             .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .codeSize = shaders[i].code_size,
-            .pCode = shaders[i].code,
+            .codeSize = code_size,
+            .pCode = code,
         };
         VkResult ret = vkCreateShaderModule(vk->device, &shader_module_create_info, NULL, &shader->vkmodule);
         if (ret != VK_SUCCESS)
             return -1;
-        shader->probe = ngli_spirv_probe(shaders[i].code, shaders[i].code_size);
+        shader->probe = ngli_spirv_probe(code, code_size);
         if (!shader->probe)
             return -1;
     }
@@ -75,6 +82,7 @@ void ngli_program_reset(struct program *s)
         struct program_shader *shader = &s->shaders[i];
         ngli_spirv_freep(&shader->probe);
         vkDestroyShaderModule(vk->device, shader->vkmodule, NULL);
+        shaderc_result_release(shader->result);
     }
     memset(s, 0, sizeof(*s));
 }

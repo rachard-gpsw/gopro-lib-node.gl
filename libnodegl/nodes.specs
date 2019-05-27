@@ -204,8 +204,8 @@
         - [blocks, NodeDict]
 
 - ComputeProgram:
-    optional:
-        - [compute, data]
+    constructors:
+        - [compute, string]
 
 - Geometry:
     constructors:
@@ -275,8 +275,8 @@
 
 - Program:
     optional:
-        - [vertex, data]
-        - [fragment, data]
+        - [vertex, string]
+        - [fragment, string]
 
 - Quad:
     optional:

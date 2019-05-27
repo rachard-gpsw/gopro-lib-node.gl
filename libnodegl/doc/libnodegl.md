@@ -267,7 +267,7 @@ Parameter | Ctor. | Live-chg. | Type | Description | Default
 
 Parameter | Ctor. | Live-chg. | Type | Description | Default
 --------- | :---: | :-------: | ---- | ----------- | :-----:
-`compute` |  |  | [`data`](#parameter-types) | compute SPIR-V shader | 
+`compute` | ✓ |  | [`string`](#parameter-types) | compute shader | 
 
 
 **Source**: [node_computeprogram.c](/libnodegl/node_computeprogram.c)
@@ -372,8 +372,8 @@ Parameter | Ctor. | Live-chg. | Type | Description | Default
 
 Parameter | Ctor. | Live-chg. | Type | Description | Default
 --------- | :---: | :-------: | ---- | ----------- | :-----:
-`vertex` |  |  | [`data`](#parameter-types) | vertex SPIR-V shader | 
-`fragment` |  |  | [`data`](#parameter-types) | fragment SPIR-V shader | 
+`vertex` |  |  | [`string`](#parameter-types) | vertex shader | 
+`fragment` |  |  | [`string`](#parameter-types) | fragment shader | 
 
 
 **Source**: [node_program.c](/libnodegl/node_program.c)

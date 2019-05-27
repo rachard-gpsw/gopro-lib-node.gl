@@ -347,19 +347,9 @@ struct rtt_priv {
 };
 
 struct program_priv {
-#ifdef VULKAN_BACKEND
-    // TODO: remove binary data
-    uint8_t *vert_data;
-    int vert_data_size;
-    uint8_t *frag_data;
-    int frag_data_size;
-    uint8_t *comp_data;
-    int comp_data_size;
-#else
     const char *vertex;
     const char *fragment;
     const char *compute;
-#endif
 
     struct program program;
 };

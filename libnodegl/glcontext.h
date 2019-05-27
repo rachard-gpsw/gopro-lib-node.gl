@@ -25,6 +25,7 @@
 #include <stdlib.h>
 
 #ifdef VULKAN_BACKEND
+#include <shaderc/shaderc.h>
 #include <vulkan/vulkan.h>
 #else
 #include "glfunctions.h"
@@ -123,6 +124,8 @@ struct glcontext {
     VkCommandBuffer command_buffers[64]; // FIXME
     int nb_command_buffers;
 
+    shaderc_compiler_t spirv_compiler;
+    shaderc_compile_options_t spirv_compiler_opts;
 #else
     /* GL context */
     const struct glcontext_class *class;

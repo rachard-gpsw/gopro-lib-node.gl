@@ -49,21 +49,22 @@ struct blockprograminfo {
 struct program_shader {
     VkShaderModule vkmodule;
     struct spirv_probe *probe;
+    shaderc_compilation_result_t result;
 };
+#endif
 
 enum {
     NGLI_PROGRAM_SHADER_VERT,
     NGLI_PROGRAM_SHADER_FRAG,
     NGLI_PROGRAM_SHADER_COMP,
-    NB_PROGRAM_SHADER
+    NGLI_PROGRAM_SHADER_NB
 };
-#endif
 
 struct program {
     struct ngl_ctx *ctx;
 
 #ifdef VULKAN_BACKEND
-    struct program_shader shaders[NB_PROGRAM_SHADER];
+    struct program_shader shaders[NGLI_PROGRAM_SHADER_NB];
 #else
     struct hmap *uniforms;
     struct hmap *attributes;
@@ -73,14 +74,7 @@ struct program {
 #endif
 };
 
-#ifdef VULKAN_BACKEND
-int ngli_program_init(struct program *s, struct ngl_ctx *ctx,
-                      const uint8_t *vert_data, int vert_data_size,
-                      const uint8_t *frag_data, int frag_data_size,
-                      const uint8_t *comp_data, int comp_data_size);
-#else
 int ngli_program_init(struct program *s, struct ngl_ctx *ctx, const char *vertex, const char *fragment, const char *compute);
-#endif
 void ngli_program_reset(struct program *s);
 
 #endif
