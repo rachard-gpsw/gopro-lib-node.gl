@@ -879,6 +879,8 @@ static int vulkan_init(struct glcontext *vk, uintptr_t display, uintptr_t window
     //shaderc_compile_options_set_optimization_level(vk->spirv_compiler_opts,
     //                                               shaderc_optimization_level_performance);
 
+    ngli_darray_init(&vk->command_buffers, sizeof(VkCommandBuffer), 0);
+
     if ((ret = probe_vulkan_extensions(vk)) != VK_SUCCESS ||
         (ret = list_vulkan_layers()) != VK_SUCCESS ||
         (ret = create_vulkan_instance(vk)) != VK_SUCCESS ||
@@ -916,16 +918,14 @@ static VkResult vulkan_swap_buffers(struct glcontext *vk)
         .waitSemaphoreCount = NGLI_ARRAY_NB(wait_sem),
         .pWaitSemaphores = wait_sem,
         .pWaitDstStageMask = wait_stages,
-        .commandBufferCount = vk->nb_command_buffers,
-        .pCommandBuffers = vk->command_buffers,
+        .commandBufferCount = ngli_darray_count(&vk->command_buffers),
+        .pCommandBuffers = ngli_darray_data(&vk->command_buffers),
         .signalSemaphoreCount = NGLI_ARRAY_NB(sig_sem),
         .pSignalSemaphores = sig_sem,
     };
 
-    //LOG(ERROR, "submit %d command buffers", vk->nb_command_buffers);
-
     VkResult ret = vkQueueSubmit(vk->graphic_queue, 1, &submit_info, vk->fences[vk->current_frame]);
-    vk->nb_command_buffers = 0;
+    vk->command_buffers.count = 0;
     if (ret != VK_SUCCESS)
         LOG(ERROR, "submit failed");
 
@@ -1021,6 +1021,8 @@ static void vulkan_uninit(struct glcontext *vk)
 
     shaderc_compiler_release(vk->spirv_compiler);
     shaderc_compile_options_release(vk->spirv_compiler_opts);
+
+    ngli_darray_reset(&vk->command_buffers);
 }
 
 static int vk_reconfigure(struct ngl_ctx *s, const struct ngl_config *config)
@@ -1116,7 +1118,8 @@ static int vk_clear(struct glcontext *vk)
     if (ret != VK_SUCCESS)
         return -1;
 
-    vk->command_buffers[vk->nb_command_buffers++] = cmd_buf;
+    if (!ngli_darray_push(&vk->command_buffers, &cmd_buf)) // XXX free command buf?
+        return -1;
 
     return 0;
 }

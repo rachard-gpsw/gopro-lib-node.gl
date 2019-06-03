@@ -27,6 +27,7 @@
 #ifdef VULKAN_BACKEND
 #include <shaderc/shaderc.h>
 #include <vulkan/vulkan.h>
+#include "darray.h"
 #else
 #include "glfunctions.h"
 #endif
@@ -121,8 +122,7 @@ struct glcontext {
     int nb_clear_cmd_buf;
 
     // final command buffers queue
-    VkCommandBuffer command_buffers[64]; // FIXME
-    int nb_command_buffers;
+    struct darray command_buffers; // VkCommandBuffer
 
     shaderc_compiler_t spirv_compiler;
     shaderc_compile_options_t spirv_compiler_opts;

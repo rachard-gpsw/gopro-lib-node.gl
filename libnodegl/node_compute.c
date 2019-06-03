@@ -153,7 +153,8 @@ static void compute_draw(struct ngl_node *node)
     if (vkret != VK_SUCCESS)
         return;
 
-    vk->command_buffers[vk->nb_command_buffers++] = cmd_buf;
+    if (!ngli_darray_push(&vk->command_buffers, &cmd_buf))
+        return;
 #else
     struct ngl_ctx *ctx = node->ctx;
     struct glcontext *gl = ctx->glcontext;

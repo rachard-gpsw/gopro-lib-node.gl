@@ -422,8 +422,8 @@ static void render_draw(struct ngl_node *node)
     if (ret != VK_SUCCESS)
         return;
 
-    vk->command_buffers[vk->nb_command_buffers++] = cmd_buf;
-
+    if (!ngli_darray_push(&vk->command_buffers, &cmd_buf))
+        return;
 #else
     struct glcontext *gl = ctx->glcontext;
 
