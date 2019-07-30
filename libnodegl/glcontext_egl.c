@@ -27,6 +27,7 @@
 #if defined(TARGET_LINUX)
 #include <X11/Xlib.h>
 #include <wayland-client.h>
+#include <wayland-egl.h>
 #endif
 
 #include "egl.h"
@@ -46,6 +47,7 @@ struct egl_priv {
     EGLSurface surface;
     EGLContext handle;
     EGLConfig config;
+    void *native_window;
     const char *extensions;
     EGLBoolean (*PresentationTimeANDROID)(EGLDisplay dpy, EGLSurface sur, khronos_stime_nanoseconds_t time);
     EGLDisplay (*GetPlatformDisplay)(EGLenum platform, void *native_display, const EGLint *attrib_list);
@@ -57,6 +59,7 @@ struct egl_priv {
     struct wl_registry_listener registry_listener;
     struct wl_compositor *compositor;
     struct wl_shell *shell;
+    struct wl_shell_surface *shell_surface;
     struct wl_egl_window *egl_window;
 #endif
 };
@@ -143,6 +146,7 @@ static void registry_add_object(void *data, struct wl_registry *registry, uint32
 {
     struct egl_priv *egl = data;
 
+    LOG(ERROR, "interface=%s", interface);
     if (!strcmp(interface,"wl_compositor")) {
         egl->compositor = wl_registry_bind (registry, name, &wl_compositor_interface, 1);
     } else if (!strcmp(interface,"wl_shell")) {
@@ -336,6 +340,23 @@ static int egl_init(struct glcontext *ctx, uintptr_t display, uintptr_t window, 
             LOG(ERROR, "could not retrieve EGL native window");
             return -1;
         }
+
+        if (ctx->platform == NGL_PLATFORM_WAYLAND) {
+            /*
+            LOG(ERROR, "%p", egl->shell);
+            egl->shell_surface = wl_shell_get_shell_surface(egl->shell, window);
+            wl_shell_surface_set_toplevel(egl->shell_surface);
+            */
+            /*
+            wl_display_roundtrip(display);
+            */
+
+            native_window = wl_egl_window_create((void *)window, 1920, 1080);
+            egl->native_window = native_window;
+            wl_egl_window_resize (native_window, 1920, 1080, 0, 0);
+            wl_display_roundtrip(egl->native_display);
+        }
+
         egl->surface = eglCreateWindowSurface(egl->display, config, native_window, NULL);
         if (!egl->surface) {
             LOG(ERROR, "could not create EGL window surface: 0x%x", eglGetError());
@@ -381,11 +402,13 @@ static int egl_resize(struct glcontext *ctx)
 {
     struct egl_priv *egl = ctx->priv_data;
 
+    wl_egl_window_resize(egl->native_window, 1920, 1080, 0, 0);
     if (!eglQuerySurface(egl->display, egl->surface, EGL_WIDTH, &ctx->width) ||
         !eglQuerySurface(egl->display, egl->surface, EGL_HEIGHT, &ctx->height)) {
         LOG(ERROR, "could not query surface dimensions: 0x%x", eglGetError());
         return -1;
     }
+    LOG(ERROR, "%dx%d", ctx->width, ctx->height);
 
     return 0;
 }
@@ -406,8 +429,10 @@ static int egl_make_current(struct glcontext *ctx, int current)
 
 static void egl_swap_buffers(struct glcontext *ctx)
 {
+    LOG(ERROR, "swap !");
     struct egl_priv *egl = ctx->priv_data;
     eglSwapBuffers(egl->display, egl->surface);
+    LOG(ERROR, "swap done !");
 }
 
 static int egl_set_swap_interval(struct glcontext *ctx, int interval)

@@ -274,7 +274,8 @@ int player_init(struct player *p, const char *win_title, struct ngl_node *scene,
     int ret = wsi_set_ngl_config(&p->ngl_config, p->window);
     if (ret < 0)
         return ret;
-    p->ngl_config.swap_interval = -1;
+    p->ngl_config.platform = NGL_PLATFORM_WAYLAND;
+    p->ngl_config.swap_interval = 0;
     p->ngl_config.viewport[0] = 0;
     p->ngl_config.viewport[1] = 0;
     p->ngl_config.viewport[2] = p->width;

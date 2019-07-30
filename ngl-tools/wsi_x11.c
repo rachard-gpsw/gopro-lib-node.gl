@@ -20,7 +20,7 @@
  */
 
 #include <GLFW/glfw3.h>
-#define GLFW_EXPOSE_NATIVE_X11
+#define GLFW_EXPOSE_NATIVE_WAYLAND
 #include <GLFW/glfw3native.h>
 #include <nodegl.h>
 
@@ -28,11 +28,15 @@
 
 int wsi_set_ngl_config(struct ngl_config *config, GLFWwindow *window)
 {
+#if 0
     Display *x11_display = glfwGetX11Display();
     Window x11_window = glfwGetX11Window(window);
-
     config->display = (uintptr_t)x11_display;
     config->window  = x11_window;
+#endif
+
+    //config->display = (uintptr_t)glfwGetWaylandDisplay();
+    config->window = (uintptr_t)glfwGetWaylandWindow(window);
 
     return 0;
 }
