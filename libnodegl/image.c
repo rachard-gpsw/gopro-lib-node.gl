@@ -53,6 +53,7 @@ void ngli_image_reset(struct image *s)
 {
     memset(s, 0, sizeof(*s));
     ngli_mat4_identity(s->coordinates_matrix);
+    ngli_mat4_identity(s->color_matrix);
 }
 
 uint64_t ngli_image_get_memory_size(const struct image *s)

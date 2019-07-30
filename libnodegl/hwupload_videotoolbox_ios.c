@@ -26,6 +26,7 @@
 
 #include <CoreVideo/CoreVideo.h>
 
+#include "colormatrix.h"
 #include "format.h"
 #include "glincludes.h"
 #include "hwconv.h"
@@ -308,6 +309,7 @@ static int vt_ios_dr_init(struct ngl_node *node, struct sxplayer_frame *frame)
     }
 
     ngli_image_init(&s->image, format_desc.layout, &vt->planes[0], &vt->planes[1]);
+    ngli_colormatrix_yuv_to_rgb_bt710(s->image.color_matrix);
 
     return 0;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 GoPro Inc.
+ * Copyright 2019 GoPro Inc.
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -19,32 +19,18 @@
  * under the License.
  */
 
-#ifndef IMAGE_H
-#define IMAGE_H
+#include <string.h>
 
-#include "texture.h"
-#include "utils.h"
+#include "colormatrix.h"
 
-enum image_layout {
-    NGLI_IMAGE_LAYOUT_NONE           = 0,
-    NGLI_IMAGE_LAYOUT_DEFAULT        = 1,
-    NGLI_IMAGE_LAYOUT_MEDIACODEC     = 2,
-    NGLI_IMAGE_LAYOUT_NV12           = 3,
-    NGLI_IMAGE_LAYOUT_NV12_RECTANGLE = 4,
-    NGLI_NB_IMAGE_LAYOUTS
+static const float yuv_to_rgb_bt709[] = {
+    1.164,   1.164,    1.164,   0.0,
+    0.0,    -0.213,    2.112,   0.0,
+    1.787,  -0.531,    0.0,     0.0,
+   -0.96625, 0.29925, -1.12875, 1.0,
 };
 
-struct image {
-    enum image_layout layout;
-    struct texture *planes[4];
-    int nb_planes;
-    NGLI_ALIGNED_MAT(coordinates_matrix);
-    NGLI_ALIGNED_MAT(color_matrix);
-    double ts;
-};
-
-void ngli_image_init(struct image *s, enum image_layout layout, ...);
-void ngli_image_reset(struct image *s);
-uint64_t ngli_image_get_memory_size(const struct image *s);
-
-#endif
+void ngli_colormatrix_yuv_to_rgb_bt709(float *dst)
+{
+    memcpy(dst, yuv_to_rgb_bt709, sizeof(yuv_to_rgb_bt709));
+}
