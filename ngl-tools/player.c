@@ -311,8 +311,11 @@ void player_main_loop(void)
 
     do {
         update_time(-1);
+        fprintf(stderr, "1\n");
         ngl_draw(p->ngl, p->frame_ts / 1000000.0);
+        fprintf(stderr, "2\n");
         glfwPollEvents();
-    } while (glfwGetKey(p->window, GLFW_KEY_ESCAPE) != GLFW_PRESS &&
+        fprintf(stderr, "3\n");
+    } while (1 || glfwGetKey(p->window, GLFW_KEY_ESCAPE) != GLFW_PRESS &&
              glfwWindowShouldClose(p->window) == 0);
 }

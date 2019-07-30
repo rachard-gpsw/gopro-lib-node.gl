@@ -61,8 +61,37 @@ struct egl_priv {
     struct wl_shell *shell;
     struct wl_shell_surface *shell_surface;
     struct wl_egl_window *egl_window;
+    struct xdg_wm_base *xdg_wm_base;
 #endif
 };
+
+static void noop() {
+   // This space intentionally left blank
+}
+
+static void xdg_surface_handle_configure(void *data,
+   struct xdg_surface *xdg_surface, uint32_t serial) {
+    struct egl_priv *egl = data;
+   xdg_surface_ack_configure(xdg_surface, serial);
+   wl_surface_commit(surface);
+}
+
+static const struct xdg_surface_listener xdg_surface_listener = {
+   .configure = xdg_surface_handle_configure,
+};
+
+static void xdg_toplevel_handle_close(void *data,
+   struct xdg_toplevel *xdg_toplevel) {
+   running = false;
+}
+
+
+
+static const struct xdg_toplevel_listener xdg_toplevel_listener = {
+   .configure = noop,
+   .close = xdg_toplevel_handle_close,
+};
+
 
 EGLImageKHR ngli_eglCreateImageKHR(struct glcontext *gl, EGLConfig context, EGLenum target, EGLClientBuffer buffer, const EGLint *attrib_list)
 {
@@ -151,6 +180,8 @@ static void registry_add_object(void *data, struct wl_registry *registry, uint32
         egl->compositor = wl_registry_bind (registry, name, &wl_compositor_interface, 1);
     } else if (!strcmp(interface,"wl_shell")) {
         egl->shell = wl_registry_bind (registry, name, &wl_shell_interface, 1);
+    } else if (!strcmp(interface,"xdg_wm_base")) {
+        egl->xdg_wm_base = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
     }
 }
 
@@ -189,6 +220,7 @@ static int egl_set_native_display(struct glcontext *ctx, uintptr_t native_displa
 
         wl_registry_add_listener(registry, &egl->registry_listener, egl);
         wl_display_roundtrip(display);
+
 
     } else if (ctx->platform == NGL_PLATFORM_XLIB) {
         egl->native_display = XOpenDisplay(NULL);
@@ -350,6 +382,17 @@ static int egl_init(struct glcontext *ctx, uintptr_t display, uintptr_t window, 
             /*
             wl_display_roundtrip(display);
             */
+
+
+            wl_surface_commit(window);
+            wl_display_roundtrip(egl->native_display);
+
+            struct xdg_surface *xdg_surface =   xdg_wm_base_get_xdg_surface(egl->xdg_wm_base, window);
+            struct xdg_toplevel *xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
+
+            xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, egl);
+            xdg_toplevel_add_listener(xdg_toplevel, &xdg_toplevel_listener, egl);
+            
 
             native_window = wl_egl_window_create((void *)window, 1920, 1080);
             egl->native_window = native_window;
