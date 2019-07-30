@@ -7,6 +7,7 @@
 #include <va/va_x11.h>
 #include <va/va_drmcommon.h>
 
+#include "colormatrix.h"
 #include "egl.h"
 #include "glincludes.h"
 #include "hwconv.h"
@@ -274,6 +275,7 @@ static int vaapi_dr_init(struct ngl_node *node, struct sxplayer_frame *frame)
         return ret;
 
     ngli_image_init(&s->image, NGLI_IMAGE_LAYOUT_NV12, &vaapi->planes[0], &vaapi->planes[1]);
+    ngli_colormatrix_yuv_to_rgb_bt709(s->image.color_matrix);
 
     return 0;
 }
