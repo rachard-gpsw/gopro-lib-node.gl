@@ -66,6 +66,7 @@ LIB_OBJS = animation.o              \
            bstr.o                   \
            buffer.o                 \
            colormatrix.o            \
+           colormatrix_utils.o      \
            darray.o                 \
            default_shaders.o        \
            deserialize.o            \
@@ -264,6 +265,12 @@ gen-gl-wrappers: gl.xml
 gl.xml:
 	$(WGET) https://raw.githubusercontent.com/KhronosGroup/OpenGL-Registry/master/xml/gl.xml
 
+
+#
+# Colorspace matrices
+#
+gen_colorspaces:
+	$(PYTHON) cspace.py colormatrix.h colormatrix.c
 
 #
 # Tests
