@@ -41,7 +41,37 @@ struct eagl_priv {
     GLuint fbo_ms;
     GLuint colorbuffer_ms;
     int fb_initialized;
+    CADisplayLink *display_link;
+    int swap_interval;
+    int swap_event;
+    NSCondition *swap_condition;
+    void *display_link_listener;
 };
+
+@interface CADisplayLinkListener : NSObject
+
+-(void) sync_callback:(nonnull CADisplayLink*)display_link;
+
+@property struct eagl_priv *eagl;
+
+@end
+
+@implementation CADisplayLinkListener
+
+-(void)sync_callback:(nonnull CADisplayLink*)display_link
+{
+    struct eagl_priv *eagl = self.eagl;
+
+    LOG(ERROR, "ping");
+    if (eagl->swap_interval > 0) {
+        [eagl->swap_condition lock];
+        eagl->swap_event++;
+        [eagl->swap_condition signal];
+        [eagl->swap_condition unlock];
+    }
+}
+
+@end
 
 static int eagl_init_layer(struct glcontext *ctx)
 {
@@ -127,6 +157,14 @@ static int eagl_init(struct glcontext *ctx, uintptr_t display, uintptr_t window,
         return -1;
     }
 
+
+    CADisplayLinkListener *listener = [[CADisplayLinkListener alloc] init];
+    listener.eagl = eagl;
+    eagl->display_link_listener = listener;
+
+    eagl->display_link = [CADisplayLink displayLinkWithTarget:listener selector:@selector(sync_callback:)];
+    [eagl->display_link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSDefaultRunLoopMode];
+
     return 0;
 }
 
@@ -206,6 +244,8 @@ static void eagl_uninit(struct glcontext *ctx)
 {
     struct eagl_priv *eagl = ctx->priv_data;
 
+    [eagl->display_link removeFromRunLoop:[NSRunLoop mainRunLoop] forMode:NSDefaultRunLoopMode];
+
     if (eagl->fb_initialized) {
         eagl_reset_framebuffer(ctx);
         ngli_glDeleteRenderbuffers(ctx, 1, &eagl->colorbuffer);
@@ -259,6 +299,16 @@ static void eagl_swap_buffers(struct glcontext *ctx)
     }
 
     ngli_glBindRenderbuffer(ctx, GL_RENDERBUFFER, eagl->colorbuffer);
+
+    if (eagl->swap_interval > 0) {
+        [eagl->swap_condition lock];
+        do {
+            [eagl->swap_condition wait];
+        } while (!eagl->swap_event);
+        eagl->swap_event = 0;
+        [eagl->swap_condition unlock];
+    }
+
     [eagl->handle presentRenderbuffer: GL_RENDERBUFFER];
 }
 
