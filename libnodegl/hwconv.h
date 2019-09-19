@@ -34,6 +34,7 @@
 struct hwconv {
     struct ngl_ctx *ctx;
     enum image_layout src_layout;
+    NGLI_ALIGNED_MAT(src_color_matrix);
 
     struct rendertarget rt;
     struct texture color_attachment;
